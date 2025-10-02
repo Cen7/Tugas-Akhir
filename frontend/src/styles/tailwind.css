@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Global Text Colors */
+    --text-primary: #1f2937;
+    --text-secondary: #3c4349;
+    --text-muted: #4b5563;
+    --text-light: #9ca3af;
+    --text-accent: #cda172;
+    --text-success: #059669;
+    --text-white: #ffffff;
+
+    /* Global Background Colors */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-light: #ecfdf5;
+    --bg-success: #d1fae5;
+    --bg-warning: #fffbeb;
+    --bg-accent: #ffc353;
+    --bg-muted: #e5e7eb;
+    --bg-overlay: #cda1721e;
+    --bg-dark: #3c4349;
+    --bg-darker: #4b5563;
+    --bg-green: #059669;
+
+    /* Border Colors */
+    --border-primary: #9ca3af;
+    --border-accent: #f5af3a;
+    --border-success: #007f5f;
+
+    /* Typography Variables */
+    --font-size-xs: 12px;
+    --font-size-sm: 14px;
+    --font-size-base: 16px;
+    --font-size-lg: 20px;
+
+    /* Font Weight Variables */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+
+    /* Line Height Variables */
+    --line-height-tight: 15px;
+    --line-height-normal: 17px;
+    --line-height-relaxed: 19px;
+    --line-height-loose: 24px;
+
+    /* Spacing Variables */
+    --spacing-xs: 2px;
+    --spacing-sm: 4px;
+    --spacing-md: 8px;
+    --spacing-lg: 10px;
+    --spacing-xl: 14px;
+    --spacing-2xl: 16px;
+    --spacing-3xl: 20px;
+    --spacing-4xl: 24px;
+    --spacing-5xl: 28px;
+    --spacing-6xl: 32px;
+    --spacing-7xl: 34px;
+    --spacing-8xl: 38px;
+    --spacing-9xl: 40px;
+    --spacing-10xl: 42px;
+    --spacing-11xl: 68px;
+    --spacing-12xl: 120px;
+    --spacing-13xl: 300px;
+    --spacing-14xl: 310px;
+
+    /* Border Radius Variables */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
+    --radius-xl: 22px;
+
+    /* Border Width Variables */
+    --border-width-thick: 4px;
+
+    /* Component-specific Colors */
+    --header-bg: #ffffff;
+    --header-menu-text: #3c4349;
+    --header-menu-active: #cda172;
+    --search-bg: #f9fafb;
+    --search-text: #9ca3af;
+    --button-text: #ffffff;
+    --line-dark: #4b5563;
+    --line-light: #e5e7eb;
+    --progress-bg: #cda1721e;
+  }
+}
