@@ -71,6 +71,54 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * @route   GET /api/penjualan/aktif
+ * @desc    Mengambil semua pesanan yang 'aktif', diurutkan dari yang paling lama
+ * @access  Private
+ */
+router.get('/aktif', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                tp.transaksi_id, tp.status_pesanan, tp.status_pembayaran,
+                mj.nomor_meja, tp.tipe_pesanan, tp.tanggal_transaksi
+            FROM tpenjualan tp
+            LEFT JOIN meja mj ON tp.meja_id = mj.meja_id
+            -- Subquery untuk memastikan kita tidak mengambil order yg semua itemnya sudah disajikan
+            WHERE tp.transaksi_id IN (
+                SELECT transaksi_id FROM dtpenjualan WHERE status_item = 'Menunggu'
+            )
+            AND tp.status_pesanan NOT IN ('Completed', 'Cancelled')
+            GROUP BY tp.transaksi_id
+            ORDER BY tp.tanggal_transaksi ASC;
+        `;
+        const [activeTransactions] = await pool.query(query);
+
+        if (activeTransactions.length === 0) {
+            return res.json([]);
+        }
+
+        const transactionIds = activeTransactions.map(t => t.transaksi_id);
+        const detailsQuery = `
+            SELECT dtp.transaksi_id, dtp.detail_id, dtp.jumlah, dtp.status_item, m.nama_menu
+            FROM dtpenjualan dtp
+            JOIN menu m ON dtp.menu_id = m.menu_id
+            WHERE dtp.transaksi_id IN (?)
+            ORDER BY dtp.detail_id ASC;
+        `;
+        const [details] = await pool.query(detailsQuery, [transactionIds]);
+
+        const results = activeTransactions.map(transaction => ({
+            ...transaction,
+            items: details.filter(d => d.transaksi_id === transaction.transaksi_id)
+        }));
+
+        res.json(results);
+    } catch (err) {
+        console.error("Gagal mengambil pesanan aktif:", err);
+        res.status(500).json({ message: "Terjadi kesalahan pada server." });
+    }
+});
+/**
  * @route   PUT /api/penjualan/:transaksi_id
  * @desc    Memperbarui item dalam sebuah pesanan
  * @access  Private
@@ -110,6 +158,34 @@ router.put('/:transaksi_id', async (req, res) => {
         res.status(500).json({ message: "Terjadi kesalahan pada server." });
     } finally {
         connection.release();
+    }
+});
+
+/**
+ * @route   PUT /api/penjualan/item/:detail_id/status
+ * @desc    Mengubah status satu item dalam pesanan (misal: dari 'Menunggu' ke 'Disajikan')
+ * @access  Private
+ */
+router.put('/item/:detail_id/status', async (req, res) => {
+    const { detail_id } = req.params;
+    const { status_item } = req.body;
+
+    if (!status_item || !['Menunggu', 'Disajikan'].includes(status_item)) {
+        return res.status(400).json({ message: "Status item tidak valid." });
+    }
+
+    try {
+        const query = "UPDATE dtpenjualan SET status_item = ? WHERE detail_id = ?";
+        const [result] = await pool.query(query, [status_item, detail_id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Item pesanan tidak ditemukan." });
+        }
+
+        res.json({ message: "Status item berhasil diperbarui." });
+    } catch (err) {
+        console.error("Gagal update status item:", err);
+        res.status(500).json({ message: "Terjadi kesalahan pada server." });
     }
 });
 

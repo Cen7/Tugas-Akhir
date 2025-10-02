@@ -33,7 +33,9 @@ const kategoriBahanRoutes = require('./routes/kategoriBahanRoutes');
 const pembelianRoutes = require('./routes/pembelianRoutes');
 const penjualanRoutes = require('./routes/penjualanRoutes');
 const laporanRoutes = require('./routes/laporanRoutes');
+const mejaRoutes = require('./routes/mejaRoutes');
 
+app.use('/api/meja', mejaRoutes);
 app.use('/api/laporan', laporanRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/users', userRoutes);
