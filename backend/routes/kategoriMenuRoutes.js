@@ -31,14 +31,32 @@ router.post('/', async (req, res) => {
     }
 });
 
-// DELETE /api/kategori-menu/:id -> Menghapus kategori menu
-router.delete('/:id', async (req, res) => {
+router.put('/:id', async (req, res) => {
     const { id } = req.params;
+    const { nama_kategori } = req.body; // Ambil nama baru dari body
+
+    // Validasi sederhana
+    if (!nama_kategori || !nama_kategori.trim()) {
+        return res.status(400).json({ message: 'Nama kategori baru tidak boleh kosong.' });
+    }
+
     try {
-        await pool.query('DELETE FROM kategori_menu WHERE kategori_menu_id = ?', [id]);
-        res.json({ message: 'Kategori menu berhasil dihapus' });
+        const query = 'UPDATE kategori_menu SET nama_kategori = ? WHERE kategori_menu_id = ?';
+        const [result] = await pool.query(query, [nama_kategori.trim(), id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Kategori menu tidak ditemukan.' });
+        }
+
+        res.json({ message: 'Nama kategori berhasil diperbarui.' });
+
     } catch (err) {
-        res.status(500).json({ message: 'Gagal menghapus kategori menu' });
+        console.error("Gagal update nama kategori menu:", err);
+        // Tangani potensi error duplikat nama jika kolom nama_kategori UNIQUE
+        if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ message: 'Nama kategori tersebut sudah ada.' });
+        }
+        res.status(500).json({ message: 'Terjadi kesalahan pada server.' });
     }
 });
 

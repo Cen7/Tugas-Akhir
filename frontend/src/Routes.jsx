@@ -1,15 +1,19 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
-import LoginForm from './pages/LoginManagement/LoginForm';
-import SignUpForm from './pages/LoginManagement/SignUpForm';
-import MenuManagementPage from './pages/MenuManagement';
-import TableManagementPage from './pages/TableManagement';
-import OrderManagementPage from './pages/OrderManagement';
-import ReportManagementPage from './pages/ReportManagement';
-import UserManagementPage from './pages/UserManagement';
-import StockManagementPage from './pages/StockManagement';
-import EditOrderPage from './pages/OrderManagement/EditOrderPage';
+import LoginForm from './Resto/LoginManagement/LoginForm';
+import SignUpForm from './Resto/LoginManagement/SignUpForm';
+import MenuManagementPage from './Resto/MenuManagement';
+import TableManagementPage from './Resto/TableManagement';
+import OrderManagementPage from './Resto/OrderManagement';
+import ReportManagementPage from './Resto/ReportManagement';
+import UserManagementPage from './Resto/UserManagement';
+import StockManagementPage from './Resto/StockManagement';
+import EditOrderPage from './Resto/OrderManagement/EditOrderPage';
+import CHomePage from './Customer/pages/CHomePage';
+import CMenuPage from './Customer/pages/CMenuPage';
+import COverviewPage from './Customer/pages/COverviewPage'
+import COrderStatusPage from './Customer/pages/COrderStatusPage';
 
 const AppRoutes = () => {
   return (
@@ -24,6 +28,10 @@ const AppRoutes = () => {
         <Route path="/user-management" element={<UserManagementPage />} />
         <Route path="/stock-management" element={<StockManagementPage />} />
         <Route path="/edit-order" element={<EditOrderPage />} />
+        <Route path="/order" element={<CHomePage />} />
+        <Route path="/order/menu" element={<CMenuPage />} />
+        <Route path="/order/overview" element={<COverviewPage />} />
+        <Route path="/order/status" element={<COrderStatusPage />} />
       </Routes>
     </Router>
   );

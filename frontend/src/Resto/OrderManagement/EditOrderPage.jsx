@@ -46,9 +46,9 @@ const EditOrderPage = () => {
                 const menuItem = allMenuItemsList.find(m => m.nama_menu === orderItem.name);
 
                 if (menuItem) {
-                    return { 
-                        ...menuItem, 
-                        quantity: orderItem.quantity 
+                    return {
+                        ...menuItem,
+                        quantity: orderItem.quantity
                     };
                 } else {
                     return {
@@ -71,8 +71,8 @@ const EditOrderPage = () => {
             const existingItem = prevCart.find(cartItem => cartItem.menu_id === item.menu_id);
             if (existingItem) {
                 return prevCart.map(cartItem =>
-                    cartItem.menu_id === item.menu_id 
-                        ? { ...cartItem, quantity: cartItem.quantity + 1 } 
+                    cartItem.menu_id === item.menu_id
+                        ? { ...cartItem, quantity: cartItem.quantity + 1 }
                         : cartItem
                 );
             }
@@ -85,8 +85,8 @@ const EditOrderPage = () => {
             const existingItem = prevCart.find(cartItem => cartItem.menu_id === item.menu_id);
             if (existingItem && existingItem.quantity > 1) {
                 return prevCart.map(cartItem =>
-                    cartItem.menu_id === item.menu_id 
-                        ? { ...cartItem, quantity: cartItem.quantity - 1 } 
+                    cartItem.menu_id === item.menu_id
+                        ? { ...cartItem, quantity: cartItem.quantity - 1 }
                         : cartItem
                 );
             }
@@ -127,12 +127,12 @@ const EditOrderPage = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ items: updatedItems })
             });
-            
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Gagal memperbarui pesanan');
             }
-            
+
             alert('Pesanan berhasil diperbarui!');
             navigate('/order-management');
         } catch (err) {
@@ -146,10 +146,10 @@ const EditOrderPage = () => {
             console.log('No menu data available');
             return [];
         }
-        
+
         const items = Object.values(menuData).flat();
         console.log('All menu items:', items);
-        
+
         // Convert harga dari string ke number dan filter yang valid
         const validItems = items.map(item => ({
             ...item,
@@ -161,7 +161,7 @@ const EditOrderPage = () => {
             }
             return isValid;
         });
-        
+
         console.log('Valid items count:', validItems.length);
         return validItems;
     }, [menuData]);
@@ -175,12 +175,12 @@ const EditOrderPage = () => {
         if (allMenuItems.length === 0) {
             return [];
         }
-        
+
         // Jika All, return semua
         if (activeFilter === 'All') {
             return allMenuItems;
         }
-        
+
         // Filter by category
         return allMenuItems.filter(item => item.kategori === activeFilter);
     }, [allMenuItems, activeFilter]);
@@ -202,11 +202,10 @@ const EditOrderPage = () => {
                                 <button
                                     key={filter}
                                     onClick={() => setActiveFilter(filter)}
-                                    className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
-                                        activeFilter === filter 
-                                            ? 'bg-[#D4A15D] text-white' 
-                                            : 'text-gray-600 hover:bg-gray-50'
-                                    }`}
+                                    className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${activeFilter === filter
+                                        ? 'bg-[#D4A15D] text-white'
+                                        : 'text-gray-600 hover:bg-gray-50'
+                                        }`}
                                 >
                                     {filter}
                                 </button>
@@ -215,57 +214,80 @@ const EditOrderPage = () => {
 
                         {loading && <p className="text-gray-600">Memuat menu...</p>}
                         {error && <p className="text-red-500">Error: {error}</p>}
-                        
+
                         {!loading && !error && displayedMenuItems.length === 0 && (
                             <div className="text-center py-8">
                                 <p className="text-gray-500">Tidak ada menu tersedia untuk kategori ini</p>
                             </div>
                         )}
-                        
+
                         {!loading && !error && displayedMenuItems.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {displayedMenuItems.map(item => (
-                                    <div key={item.menu_id} className="bg-white rounded-lg shadow-sm overflow-hidden">
-                                        <img 
-                                            src={
-                                                item.has_gambar 
-                                                    ? `http://localhost:3000/api/menu/gambar/${item.menu_id}?t=${new Date().getTime()}` 
-                                                    : '/images/placeholder_food.png'
-                                            }
-                                            alt={item.nama_menu} 
-                                            className="w-full h-32 object-cover bg-gray-200"
-                                            onError={(e) => {
-                                                e.target.src = '/images/placeholder_food.png';
-                                            }}
-                                        />
-                                        <div className="p-4">
-                                            <p className="font-bold text-gray-800">{item.nama_menu}</p>
-                                            <p className="text-sm text-gray-500 mb-2">
-                                                Rp {Number(item.harga).toLocaleString('id-ID')}
-                                            </p>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-gray-400">{item.kategori}</span>
-                                                <div className="flex items-center gap-3 bg-gray-100 rounded-full px-2 py-1">
-                                                    <button 
-                                                        onClick={() => handleRemoveItem(item)} 
-                                                        className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-700"
-                                                    >
-                                                        -
-                                                    </button>
-                                                    <span className="font-semibold w-6 text-center text-gray-800">
-                                                        {getQuantityInCart(item.menu_id)}
+                                {displayedMenuItems.map(item => {
+                                    // --- TAMBAHKAN LOGIKA STATUS DI SINI ---
+                                    const isAvailable = item.status === 'tersedia';
+                                    const quantity = getQuantityInCart(item.menu_id);
+
+                                    return (
+                                        // Terapkan style disable ke div terluar
+                                        <div
+                                            key={item.menu_id}
+                                            className={`bg-white rounded-lg shadow-sm overflow-hidden relative ${!isAvailable ? 'opacity-50 pointer-events-none grayscale' : ''
+                                                }`}
+                                        >
+                                            {/* Tampilkan overlay jika tidak tersedia */}
+                                            {!isAvailable && (
+                                                <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center z-10 rounded-lg">
+                                                    <span className="text-white font-bold text-sm bg-red-600 px-3 py-1 rounded">
+                                                        Tidak Tersedia
                                                     </span>
-                                                    <button 
-                                                        onClick={() => handleAddItem(item)} 
-                                                        className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-700"
-                                                    >
-                                                        +
-                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <img
+                                                src={
+                                                    item.has_gambar
+                                                        ? `http://localhost:3000/api/menu/gambar/${item.menu_id}?t=${new Date().getTime()}`
+                                                        : '/images/placeholder_food.png'
+                                                }
+                                                alt={item.nama_menu}
+                                                className="w-full h-32 object-cover bg-gray-200"
+                                                onError={(e) => {
+                                                    e.target.src = '/images/placeholder_food.png';
+                                                }}
+                                            />
+                                            <div className="p-4">
+                                                <p className="font-bold text-gray-800">{item.nama_menu}</p>
+                                                <p className="text-sm text-gray-500 mb-2">
+                                                    Rp {(item.harga && typeof item.harga === 'number') ? item.harga.toLocaleString('id-ID') : '0'}
+                                                </p>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-gray-400">{item.kategori}</span>
+                                                    <div className="flex items-center gap-3 bg-gray-100 rounded-full px-2 py-1">
+                                                        {/* Tambahkan disabled ke tombol */}
+                                                        <button
+                                                            onClick={() => handleRemoveItem(item)}
+                                                            className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-700 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            disabled={!isAvailable || quantity === 0} // Disable jika !tersedia atau quantity 0
+                                                        >
+                                                            -
+                                                        </button>
+                                                        <span className="font-semibold w-6 text-center text-gray-800">
+                                                            {quantity}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => handleAddItem(item)}
+                                                            className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-700 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            disabled={!isAvailable} // Disable jika !tersedia
+                                                        >
+                                                            +
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -282,13 +304,13 @@ const EditOrderPage = () => {
                                 cart.map(item => (
                                     <div key={item.menu_id} className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
                                         <div className="flex items-center gap-3">
-                                            <img 
+                                            <img
                                                 src={
-                                                    item.has_gambar 
-                                                        ? `http://localhost:3000/api/menu/gambar/${item.menu_id}?t=${new Date().getTime()}` 
+                                                    item.has_gambar
+                                                        ? `http://localhost:3000/api/menu/gambar/${item.menu_id}?t=${new Date().getTime()}`
                                                         : '/images/placeholder_food.png'
                                                 }
-                                                alt={item.nama_menu} 
+                                                alt={item.nama_menu}
                                                 className="w-12 h-12 rounded-lg object-cover bg-gray-200"
                                                 onError={(e) => {
                                                     e.target.src = '/images/placeholder_food.png';
@@ -303,8 +325,8 @@ const EditOrderPage = () => {
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <span className="font-semibold text-gray-800">x{item.quantity}</span>
-                                            <button 
-                                                onClick={() => handleClearItem(item.menu_id)} 
+                                            <button
+                                                onClick={() => handleClearItem(item.menu_id)}
                                                 className="p-1 text-red-400 hover:text-red-600 rounded-full hover:bg-red-100 transition"
                                             >
                                                 <X size={18} />
@@ -314,7 +336,7 @@ const EditOrderPage = () => {
                                 ))
                             )}
                         </div>
-                        
+
                         {cart.length > 0 && (
                             <div className="border-t border-gray-200 pt-4 mb-4">
                                 <div className="flex justify-between items-center mb-2">
@@ -327,20 +349,19 @@ const EditOrderPage = () => {
                         )}
 
                         <div className="mt-auto flex gap-4">
-                            <button 
-                                onClick={() => navigate(-1)} 
+                            <button
+                                onClick={() => navigate(-1)}
                                 className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition"
                             >
                                 Cancel
                             </button>
-                            <button 
+                            <button
                                 onClick={handleUpdateOrder}
                                 disabled={cart.length === 0}
-                                className={`flex-1 py-3 font-semibold rounded-lg transition ${
-                                    cart.length === 0 
-                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                        : 'bg-[#D4A15D] text-white hover:bg-opacity-90'
-                                }`}
+                                className={`flex-1 py-3 font-semibold rounded-lg transition ${cart.length === 0
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-[#D4A15D] text-white hover:bg-opacity-90'
+                                    }`}
                             >
                                 Update Pesanan
                             </button>

@@ -189,10 +189,12 @@ const MenuManagement = () => {
           onAdd={handleMenuUpdate}
         />
       )}
+      // Di dalam MenuManagement.jsx (bagian return)
       {activeModal.type === 'editKategoriMenu' && (
         <EditKategoriMenu
+          show={true} // <-- TAMBAHKAN BARIS INI
           onClose={handleCloseModal}
-          onUpdate={() => { /* Anda bisa memicu refresh data di sini jika perlu */ }}
+          onUpdate={fetchData} // Panggil fetchData agar list menu ter-refresh jika kategori berubah
         />
       )}
     </>
