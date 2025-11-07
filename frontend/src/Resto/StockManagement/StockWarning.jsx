@@ -31,7 +31,7 @@ const StockWarning = ({ warnings, onClose }) => {
 
         {warnings.stokKadaluwarsa.length > 0 && (
           <div>
-            <p className="font-semibold">Stok Kadaluwarsa:</p>
+            <p className="font-semibold">Stok Kedaluwarsa:</p>
             <ul className="list-disc list-inside text-sm">
               {warnings.stokKadaluwarsa.map((item, index) => (
                 <li key={`exp-${index}`}>{item.nama_bahan} - {item.sisa_hari} hari lagi</li>

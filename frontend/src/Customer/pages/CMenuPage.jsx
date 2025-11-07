@@ -7,7 +7,7 @@ import MenuItemCard from '../components/MenuItemCard'; // Ensure correct path
 const CMenuPage = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { cartItems, orderType, setTable } = useCart();
+    const { cartItems, orderType, setTable, setOrderType } = useCart();
     const [menuData, setMenuData] = useState({});
     const [loadingMenu, setLoadingMenu] = useState(true); // Renamed for clarity
     const [error, setError] = useState(null);
@@ -21,17 +21,21 @@ const CMenuPage = () => {
         const storedOrderId = localStorage.getItem('activeOrderId');
         setActiveOrderId(storedOrderId);
 
-        // Redirect if no order type (and no active order)
-        if (!storedOrderId && !orderType) {
+        // Check meja query param first — allow direct links like /order/menu?meja=3
+        const mejaIdFromUrl = searchParams.get('meja');
+        if (!storedOrderId && mejaIdFromUrl) {
+            // If user opened a table-specific link, set order type to Dine-in and set table
+            setTable(Number(mejaIdFromUrl));
+            if (!orderType) {
+                setOrderType && setOrderType('Dine-in');
+            }
+        }
+
+        // Redirect if no order type (and no active order) and no meja param
+        if (!storedOrderId && !orderType && !mejaIdFromUrl) {
             console.warn("CMenuPage: Tipe pesanan (orderType) belum dipilih & tidak ada order aktif. Mengarahkan ke halaman awal.");
             navigate('/order');
             return;
-        }
-
-        // Set table ID only for new Dine-in orders
-        const mejaIdFromUrl = searchParams.get('meja');
-        if (orderType === 'Dine-in' && mejaIdFromUrl && !storedOrderId) {
-            setTable(mejaIdFromUrl);
         }
 
         // --- Fetch Menu Data ---

@@ -2,10 +2,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Helmet } from 'react-helmet';
 import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext';
 import PaymentModal from '../components/PaymentModal'; // Pastikan path ini benar
 
 const COrderStatusPage = () => {
     const navigate = useNavigate();
+    const { showNotification } = useNotification();
     const [orderId, setOrderId] = useState(null);
     const [orderDetails, setOrderDetails] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -17,76 +19,93 @@ const COrderStatusPage = () => {
         setLoading(true);
         setError(null);
         try {
-            // Gunakan endpoint GET /api/penjualan/:id
             const response = await fetch(`/api/penjualan/${id}`);
 
             if (response.status === 404) {
-                // Pesanan mungkin sudah selesai/dihapus di backend
                 localStorage.removeItem('activeOrderId');
-                alert("Pesanan Anda sudah tidak aktif atau tidak ditemukan.");
+                showNotification("Pesanan Anda sudah tidak aktif atau tidak ditemukan.", "warning");
                 navigate('/order');
                 return;
             }
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Gagal mengambil detail pesanan');
             }
 
             const data = await response.json();
-            // Cek lagi jika statusnya sudah selesai (misal dibayar via kasir)
-            if (data.orderStatus === 'Completed' || data.orderStatus === 'Cancelled') {
+            // Jika sudah selesai atau dibatalkan, kembali ke halaman order
+            if (data.orderStatus === 'Selesai' || data.orderStatus === 'Dibatalkan' || data.orderStatus === 'Cancel') {
                 localStorage.removeItem('activeOrderId');
-                alert(`Pesanan #${id} sudah ${data.orderStatus}.`);
+                showNotification(`Pesanan #${id} sudah ${data.orderStatus}.`, "success");
                 navigate('/order');
                 return;
             }
+
             setOrderDetails(data);
         } catch (err) {
             setError(err.message);
-            // Pertimbangkan untuk menghapus ID jika fetch gagal berkali-kali?
-            // localStorage.removeItem('activeOrderId');
-            // navigate('/order');
         } finally {
             setLoading(false);
         }
-    }, [navigate]); // navigate ditambahkan sebagai dependency
+    }, [navigate, showNotification]);
 
-    // 1. Baca orderId dari localStorage saat komponen mount
+    // Ambil orderId dari localStorage saat mount
     useEffect(() => {
         const activeId = localStorage.getItem('activeOrderId');
         if (!activeId) {
-            console.log("Tidak ada ID pesanan aktif di localStorage, kembali ke home.");
-            navigate('/order'); // Kembali jika tidak ada ID
+            navigate('/order');
         } else {
             setOrderId(activeId);
         }
     }, [navigate]);
 
-    // 2. Fetch detail pesanan ketika orderId sudah didapatkan
+    // Fetch detail saat orderId tersedia
     useEffect(() => {
         if (orderId) {
             fetchDetails(orderId);
-            // Set interval untuk refresh status secara berkala (misal setiap 1 menit)
             const interval = setInterval(() => fetchDetails(orderId), 60000);
-            return () => clearInterval(interval); // Bersihkan interval saat unmount
+            return () => clearInterval(interval);
         }
-    }, [orderId, fetchDetails]); // fetchDetails ditambahkan sebagai dependency
+    }, [orderId, fetchDetails]);
 
     // Fungsi yang dipanggil setelah pembayaran berhasil
     const handlePaymentComplete = () => {
         setIsPaymentModalOpen(false);
-        localStorage.removeItem('activeOrderId'); // Hapus ID setelah lunas
-        alert("Pembayaran Berhasil! Terima kasih.");
-        navigate('/order'); // Kembali ke halaman awal
+        localStorage.removeItem('activeOrderId');
+        showNotification("Pembayaran Berhasil! Terima kasih.", "success");
+        navigate('/order');
     };
 
     // Tampilan Loading, Error, atau jika data belum siap
     if (loading) return <div className="p-6 text-center text-gray-600">Memuat status pesanan...</div>;
     if (error) return <div className="p-6 text-center text-red-600">Error: {error}</div>;
-    if (!orderDetails) return null; // Atau tampilkan pesan "Tidak ada detail"
+    if (!orderDetails) return null;
 
     // Cek apakah tombol bayar boleh ditampilkan
-    const canPay = orderDetails.paymentStatus !== 'Paid' && orderDetails.orderStatus !== 'Cancelled';
+    const canPay = orderDetails.paymentStatus !== 'Lunas' && orderDetails.orderStatus !== 'Dibatalkan';
+
+    // Helper function untuk translate status ke Bahasa Indonesia
+    const getOrderStatusLabel = (status) => {
+        const labels = {
+            'Pending': 'Pending',
+            'Diproses': 'Diproses',
+            'Siap': 'Siap',
+            'Selesai': 'Selesai',
+            'Dibatalkan': 'Dibatalkan'
+        };
+        return labels[status] || status;
+    };
+
+    const getPaymentStatusLabel = (status) => {
+        const labels = {
+            'Lunas': 'Lunas',
+            'Belum Lunas': 'Belum Lunas',
+            'Pending': 'Pending',
+            'Dibatalkan': 'Dibatalkan'
+        };
+        return labels[status] || status;
+    };
 
     return (
         <>
@@ -98,13 +117,19 @@ const COrderStatusPage = () => {
                     <p className="text-sm text-gray-600">Nomor Pesanan:</p>
                     <p className="font-bold text-2xl text-gray-800 mb-2">#{orderDetails.transaksi_id}</p>
                     <div className="flex justify-between items-center text-sm">
-                        <span>Status Pesanan: <span className="font-semibold">{orderDetails.orderStatus}</span></span>
-                        <span>Status Bayar: <span className="font-semibold">{orderDetails.paymentStatus}</span></span>
+                        <div>
+                            { (orderDetails.customer || orderDetails.nama_pembeli) && (
+                                <p className="text-sm text-gray-700">Nama Pembeli: <span className="font-semibold">{orderDetails.customer || orderDetails.nama_pembeli}</span></p>
+                            )}
+                            <p>Status Pesanan: <span className="font-semibold">{getOrderStatusLabel(orderDetails.orderStatus)}</span></p>
+                        </div>
+                        <div>
+                            <span>Status Bayar: <span className="font-semibold">{getPaymentStatusLabel(orderDetails.paymentStatus)}</span></span>
+                        </div>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                        {/* --- PASTIKAN MENAMPILKAN orderDetails.id (ALIAS nomor_meja) --- */}
                         {orderDetails.type === 'Dine-in'
-                            ? `Meja ${orderDetails.id || 'N/A'}` // Tampilkan nomor meja dari API
+                            ? `Meja ${orderDetails.id || 'N/A'}`
                             : 'Takeaway'}
                         {' - '}
                         {new Date(orderDetails.date).toLocaleString('id-ID', { timeStyle: 'short' })}

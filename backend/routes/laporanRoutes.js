@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
         // 1. Ambil data ringkasan (summary)
         const summaryQuery = `
             SELECT
-                (SELECT COALESCE(SUM(total_harga), 0) FROM tpenjualan WHERE status_pesanan = 'Completed' AND tanggal_transaksi BETWEEN ? AND ?) AS totalPendapatan,
+                (SELECT COALESCE(SUM(total_harga), 0) FROM tpenjualan WHERE status_pesanan = 'Selesai' AND tanggal_transaksi BETWEEN ? AND ?) AS totalPendapatan,
                 (SELECT COUNT(*) FROM tpenjualan WHERE tanggal_transaksi BETWEEN ? AND ?) AS totalOrder,
                 (SELECT COALESCE(SUM(total_harga), 0) FROM tpembelian WHERE tanggal_pembelian BETWEEN DATE(?) AND DATE(?)) AS totalPengeluaran
         `;
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 2) { // Tampilkan per jam jika rentang <= 2 hari
-            const query = `SELECT DATE_FORMAT(tanggal_transaksi, '%H:00') AS label, SUM(total_harga) AS sales FROM tpenjualan WHERE status_pesanan = 'Completed' AND tanggal_transaksi BETWEEN ? AND ? GROUP BY label ORDER BY label;`;
+            const query = `SELECT DATE_FORMAT(tanggal_transaksi, '%H:00') AS label, SUM(total_harga) AS sales FROM tpenjualan WHERE status_pesanan = 'Selesai' AND tanggal_transaksi BETWEEN ? AND ? GROUP BY label ORDER BY label;`;
             const [results] = await pool.query(query, [start, end]);
             const template = Array.from({ length: 24 }, (_, i) => ({ label: i.toString().padStart(2, '0') + ':00', sales: 0 }));
             dailySelling = template.map(hour => {
@@ -74,7 +74,7 @@ router.get('/', async (req, res) => {
                 return sale ? { ...hour, sales: parseFloat(sale.sales) } : hour;
             });
         } else { // Tampilkan per hari jika rentang > 2 hari
-            const query = `SELECT DATE(tanggal_transaksi) AS label, SUM(total_harga) AS sales FROM tpenjualan WHERE status_pesanan = 'Completed' AND tanggal_transaksi BETWEEN ? AND ? GROUP BY label ORDER BY label;`;
+            const query = `SELECT DATE(tanggal_transaksi) AS label, SUM(total_harga) AS sales FROM tpenjualan WHERE status_pesanan = 'Selesai' AND tanggal_transaksi BETWEEN ? AND ? GROUP BY label ORDER BY label;`;
             const [results] = await pool.query(query, [start, end]);
             let dateTemplate = [];
             let currentDate = new Date(range.start);
@@ -96,7 +96,7 @@ router.get('/', async (req, res) => {
             JOIN tpenjualan tp ON dtp.transaksi_id = tp.transaksi_id
             JOIN menu m ON dtp.menu_id = m.menu_id
             JOIN kategori_menu km ON m.kategori_menu_id = km.kategori_menu_id
-            WHERE tp.status_pesanan = 'Completed' AND tp.tanggal_transaksi BETWEEN ? AND ?
+            WHERE tp.status_pesanan = 'Selesai' AND tp.tanggal_transaksi BETWEEN ? AND ?
             GROUP BY id, name;  -- Group berdasarkan id dan name
         `;
         const [revenueByCategoryResult] = await pool.query(revenueByCategoryQuery, [start, end]);
@@ -121,7 +121,7 @@ router.get('/', async (req, res) => {
             image: `/api/menu/gambar/${dish.menu_id}`
         }));
         // 5. Ambil detail transaksi pendapatan
-        const pendapatanDetailsQuery = `SELECT transaksi_id as id, tanggal_transaksi as tanggal, total_harga as total FROM tpenjualan WHERE status_pesanan = 'Completed' AND tanggal_transaksi BETWEEN ? AND ? ORDER BY tanggal_transaksi DESC;`;
+        const pendapatanDetailsQuery = `SELECT transaksi_id as id, tanggal_transaksi as tanggal, total_harga as total FROM tpenjualan WHERE status_pesanan = 'Selesai' AND tanggal_transaksi BETWEEN ? AND ? ORDER BY tanggal_transaksi DESC;`;
         const [pendapatanDetails] = await pool.query(pendapatanDetailsQuery, [start, end]);
 
         // 6. Ambil detail transaksi pengeluaran

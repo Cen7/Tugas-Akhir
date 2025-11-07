@@ -1,11 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Helmet } from 'react-helmet';
+import { Users, ShoppingBag } from 'react-feather';
 import Header from '../../components/common/Header';
+import Switch from '../../components/ui/Switch';
 import { CheckSquare, Square } from 'react-feather';
+import { useAuth } from '../../context/AuthContext';
+
+// Import komponen modular
+import PopUpConfirm from './PopUpConfirm';
+import PopUpNotification from './PopUpNotification';
+import EditMeja from './EditMeja';
+import PopUpOrderDetail from './PopUpOrderDetail';
 
 const TableManagement = () => {
+    const { currentUser } = useAuth();
+    
     // State untuk data dari API
     const [tables, setTables] = useState([]);
+    const [allTables, setAllTables] = useState([]); // Semua meja termasuk disabled
     const [activeOrders, setActiveOrders] = useState([]); // Semua order aktif dengan detail items
     const [activeOrdersWithItems, setActiveOrdersWithItems] = useState([]); // Order dengan items lengkap
     const [selectedOrder, setSelectedOrder] = useState(null); // Order yang dipilih untuk popup
@@ -14,9 +26,21 @@ const TableManagement = () => {
     const [error, setError] = useState(null);
     const [showPopup, setShowPopup] = useState(false); // State untuk popup detail order
     const [showEditMejaPopup, setShowEditMejaPopup] = useState(false); // State untuk popup edit meja
+    const [refreshKey, setRefreshKey] = useState(0); // State untuk force re-render
+
+    // State untuk modal konfirmasi dan notifikasi
+    const [confirmModal, setConfirmModal] = useState({ show: false, message: '', onConfirm: null });
+    const [notifModal, setNotifModal] = useState({ show: false, message: '', type: 'success' }); // type: success, error, warning
 
     // State untuk kontrol UI view
     const [activeView, setActiveView] = useState('Meja'); // 'Meja' atau 'Detail Pesanan'
+
+    // Helper function untuk check apakah pesanan adalah Takeaway
+    const isTakeAway = (order) => {
+        if (!order) return false;
+        const tipe = order.tipe_pesanan?.toLowerCase().replace(/\s/g, '').replace(/-/g, ''); // Remove spaces and hyphens
+        return tipe === 'takeaway' || !order.nomor_meja;
+    };
 
     // Function untuk fetch semua data
     const fetchData = async () => {
@@ -25,9 +49,15 @@ const TableManagement = () => {
         setError(null);
         
         try {
+            // Tambahkan timestamp untuk cache busting
+            const timestamp = new Date().getTime();
             const [tablesRes, ordersRes] = await Promise.all([
-                fetch('/api/meja/status'),
-                fetch('/api/meja/active-orders')
+                fetch(`/api/meja/status?_t=${timestamp}`, {
+                    cache: 'no-cache'
+                }),
+                fetch(`/api/meja/active-orders?_t=${timestamp}`, {
+                    cache: 'no-cache'
+                })
             ]);
 
             if (!tablesRes.ok) throw new Error('Gagal memuat status meja');
@@ -41,14 +71,30 @@ const TableManagement = () => {
 
             // Fetch items untuk setiap order aktif (untuk sidebar tab Meja)
             await fetchAllOrderItems(ordersData);
+            
+            // Force re-render
+            setRefreshKey(prev => prev + 1);
 
         } catch (err) {
+            console.error('❌ Error fetching data:', err);
             setError(err.message);
             setTables([]);
             setActiveOrders([]);
             setActiveOrdersWithItems([]);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Function untuk fetch semua meja (termasuk disabled) untuk management
+    const fetchAllTables = async () => {
+        try {
+            const response = await fetch('/api/meja/all', { cache: 'no-cache' });
+            if (!response.ok) throw new Error('Gagal memuat data meja');
+            const data = await response.json();
+            setAllTables(data);
+        } catch (err) {
+            console.error('Error fetching all tables:', err);
         }
     };
 
@@ -60,13 +106,18 @@ const TableManagement = () => {
         }
 
         try {
+            const timestamp = new Date().getTime();
             const ordersWithItems = await Promise.all(
                 orders.map(async (order) => {
                     try {
-                        const response = await fetch(`/api/meja/order-items/${order.transaksi_id}`);
+                        const response = await fetch(`/api/meja/order-items/${order.transaksi_id}?_t=${timestamp}`, {
+                            cache: 'no-cache'
+                        });
                         if (response.ok) {
                             const items = await response.json();
-                            return { ...order, items };
+                            // Sort items FIFO: item terlama (detail_id terkecil) di atas
+                            const sortedItems = items.sort((a, b) => a.detail_id - b.detail_id);
+                            return { ...order, items: sortedItems };
                         }
                         return { ...order, items: [] };
                     } catch (err) {
@@ -75,7 +126,10 @@ const TableManagement = () => {
                     }
                 })
             );
-            setActiveOrdersWithItems(ordersWithItems);
+            
+            // Sort FIFO: pesanan terlama (transaksi_id terkecil) di atas
+            const sortedOrders = ordersWithItems.sort((a, b) => a.transaksi_id - b.transaksi_id);
+            setActiveOrdersWithItems(sortedOrders);
         } catch (err) {
             console.error('Error fetching order items:', err);
             setActiveOrdersWithItems(orders.map(order => ({ ...order, items: [] })));
@@ -85,15 +139,30 @@ const TableManagement = () => {
     // Fetch data saat component mount dan setup auto-refresh
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 30000); // Refresh setiap 30 detik (mengurangi flickering)
+        fetchAllTables(); // Load semua meja untuk management
+        const interval = setInterval(fetchData, 30000); // Refresh setiap 30 detik
         return () => clearInterval(interval);
     }, []);
 
-    // Function untuk toggle status item (Menunggu <-> Disajikan)
+    // Helper functions untuk modal
+    const showConfirm = (message, onConfirm) => {
+        setConfirmModal({ show: true, message, onConfirm });
+    };
+
+    const hideConfirm = () => {
+        setConfirmModal({ show: false, message: '', onConfirm: null });
+    };
+
+    const showNotification = (message, type = 'success') => {
+        setNotifModal({ show: true, message, type });
+        setTimeout(() => {
+            setNotifModal({ show: false, message: '', type: 'success' });
+        }, 3000);
+    };
+
+    // Function untuk handle update status item (toggle checklist)
     const handleItemStatusToggle = async (detailId, currentStatus) => {
-        const newStatus = currentStatus === 'Menunggu' ? 'Disajikan' : 'Menunggu';
-        
-        try {
+        const newStatus = currentStatus === 'Menunggu' ? 'Disajikan' : 'Menunggu';        try {
             const response = await fetch(`/api/meja/update-item-status/${detailId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -105,10 +174,13 @@ const TableManagement = () => {
                 throw new Error(errorData.message || 'Gagal update status item');
             }
 
+            await response.json();
+
             // Refresh data setelah update
             await fetchData();
         } catch (err) {
-            alert(`Error: ${err.message}`);
+            console.error('❌ Error:', err);
+            showNotification(err.message, 'error');
         }
     };
 
@@ -131,7 +203,10 @@ const TableManagement = () => {
             if (!response.ok) throw new Error('Gagal memuat detail items');
             
             const items = await response.json();
-            setOrderItems(items);
+            
+            // Sort FIFO: item terlama (detail_id terkecil) di atas
+            const sortedItems = items.sort((a, b) => a.detail_id - b.detail_id);
+            setOrderItems(sortedItems);
         } catch (err) {
             console.error('Error fetching order items:', err);
             setOrderItems([]);
@@ -145,31 +220,41 @@ const TableManagement = () => {
         setOrderItems([]);
     };
 
-    // Function untuk kosongkan meja (complete order dan set semua item Disajikan)
+    // Function untuk Selesaikan pesanan (complete order dan set semua item Disajikan)
     const handleKosongkanMeja = async () => {
         if (!selectedOrder) return;
         
-        if (!confirm('Apakah Anda yakin ingin mengosongkan meja ini? Semua item akan ditandai selesai dan meja akan tersedia kembali.')) return;
+        const isTA = isTakeAway(selectedOrder);
+        
+        const confirmMessage = isTA
+            ? 'Apakah Anda yakin ingin menyelesaikan pesanan Take Away ini? Semua item akan ditandai Selesai.'
+            : 'Apakah Anda yakin ingin mengosongkan meja ini? Semua item akan ditandai Selesai dan meja akan tersedia kembali.';
+        
+        showConfirm(confirmMessage, async () => {
+            try {
+                // Panggil endpoint kosongkan meja (otomatis set semua item Disajikan & status Selesai)
+                const response = await fetch(`/api/meja/kosongkan/${selectedOrder.transaksi_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
 
-        try {
-            // Panggil endpoint kosongkan meja (otomatis set semua item Disajikan & status Completed)
-            const response = await fetch(`/api/meja/kosongkan/${selectedOrder.transaksi_id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-            });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Gagal menyelesaikan pesanan');
+                }
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Gagal mengosongkan meja');
+                // Close popup dan refresh data
+                handleClosePopup();
+                await fetchData();
+                
+                const successMessage = isTA
+                    ? 'Pesanan Take Away berhasil diSelesaikan'
+                    : 'Meja berhasil dikosongkan';
+                showNotification(successMessage, 'success');
+            } catch (err) {
+                showNotification(err.message, 'error');
             }
-
-            // Close popup dan refresh data
-            handleClosePopup();
-            await fetchData();
-            alert('Meja berhasil dikosongkan');
-        } catch (err) {
-            alert(`Error: ${err.message}`);
-        }
+        });
     };
 
     // Function untuk tambah meja baru
@@ -181,33 +266,44 @@ const TableManagement = () => {
             });
 
             if (!response.ok) {
-                throw new Error('Gagal menambah meja');
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Gagal menambah meja');
             }
 
             await fetchData();
-            alert('Meja berhasil ditambahkan');
+            await fetchAllTables(); // Refresh data semua meja
+            showNotification('Meja berhasil ditambahkan', 'success');
         } catch (err) {
-            alert(`Error: ${err.message}`);
+            showNotification(err.message, 'error');
         }
     };
 
-    // Function untuk hapus meja
-    const handleHapusMeja = async (id_meja) => {
-        if (!confirm('Apakah Anda yakin ingin menghapus meja ini?')) return;
+    // Function untuk toggle status meja (enable/disable)
+    const handleToggleStatusMeja = async (meja_id, currentStatus) => {
+        // Tidak bisa toggle jika meja sedang terisi
+        if (currentStatus === 'terisi') {
+            return; // Silently ignore, slider sudah disabled
+        }
 
+        // Langsung toggle tanpa konfirmasi karena switch lebih intuitif
         try {
-            const response = await fetch(`/api/meja/hapus/${id_meja}`, {
-                method: 'DELETE'
+            const response = await fetch(`/api/meja/toggle-status/${meja_id}`, {
+                method: 'PATCH'
             });
 
             if (!response.ok) {
-                throw new Error('Gagal menghapus meja');
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Gagal mengubah status meja');
             }
 
+            const result = await response.json();
             await fetchData();
-            alert('Meja berhasil dihapus');
+            await fetchAllTables(); // Refresh data semua meja
+            showNotification(result.message, 'success');
         } catch (err) {
-            alert(`Error: ${err.message}`);
+            showNotification(err.message, 'error');
+            // Refresh untuk rollback UI ke state sebenarnya
+            await fetchAllTables();
         }
     };
 
@@ -216,13 +312,13 @@ const TableManagement = () => {
         return tables.reduce((acc, table) => {
             if (!table.transaksi_id) {
                 acc.free++;
-            } else if (table.status_pembayaran === 'Paid') {
-                acc.paid++;
+            } else if (table.status_pembayaran === 'Lunas') {
+                acc.lunas++;
             } else {
-                acc.notPaid++;
+                acc.belumLunas++;
             }
             return acc;
-        }, { free: 0, notPaid: 0, paid: 0 });
+        }, { free: 0, belumLunas: 0, lunas: 0 });
     }, [tables]);
 
     // Function untuk render card meja (with useCallback to prevent re-creation)
@@ -233,34 +329,53 @@ const TableManagement = () => {
         let statusInfo = { badgeText: 'Kosong', color: '#a1a1aa', progress: null };
 
         if (table.transaksi_id) {
-            const isPaid = table.status_pembayaran === 'Paid';
+            // Gunakan status_pesanan dari backend yang sudah diupdate secara dinamis
+            const statusPesanan = table.status_pesanan || 'Pending';
+            const isLunas = table.status_pembayaran === 'Lunas';
             
-            // Hitung progress dari orderDetail
+            // Hitung progress dari table atau orderDetail
             let servedItems = 0;
             let totalItems = 0;
             
-            if (orderDetail) {
+            if (table.item_disajikan !== undefined && table.total_item !== undefined) {
+                // Gunakan data dari table (endpoint /status)
+                totalItems = table.total_item || 0;
+                servedItems = table.item_disajikan || 0;
+            } else if (orderDetail) {
+                // Fallback ke orderDetail
                 totalItems = orderDetail.total_item || 0;
                 const waitingItems = orderDetail.jumlah_menunggu || 0;
                 servedItems = totalItems - waitingItems;
             }
 
-            // Tentukan status berdasarkan pembayaran dan progress item
-            if (isPaid && servedItems === totalItems && totalItems > 0) {
-                statusKey = 'completed';
-                statusInfo = { badgeText: 'Selesai', color: '#22c55e' }; // Green
-            } else if (isPaid) {
-                statusKey = 'paid';
+            // Tentukan status berdasarkan status_pesanan dari backend
+            switch (statusPesanan) {
+                case 'Selesai':
+                    statusKey = 'Selesai';
+                    statusInfo = { badgeText: 'Selesai', color: '#22c55e' }; // Green
+                    break;
+                case 'Dibatalkan':
+                    statusKey = 'Dibatalkan';
+                    statusInfo = { badgeText: 'Dibatalkan', color: '#ef4444' }; // Red
+                    break;
+                case 'Siap':
+                    statusKey = 'ready';
+                    statusInfo = { badgeText: 'Siap', color: '#3b82f6', progress: { served: servedItems, total: totalItems } }; // Blue
+                    break;
+                case 'Diproses':
+                    statusKey = 'in_progress';
+                    statusInfo = { badgeText: 'Diproses', color: '#f59e0b', progress: { served: servedItems, total: totalItems } }; // Amber
+                    break;
+                case 'Pending':
+                default:
+                    statusKey = 'pending';
+                    statusInfo = { badgeText: 'Pending', color: '#9ca3af', progress: { served: servedItems, total: totalItems } }; // Gray
+                    break;
+            }
+
+            // Override jika sudah bayar DAN Selesai
+            if (isLunas && statusPesanan === 'Selesai') {
                 statusInfo = { badgeText: 'Lunas', color: '#10b981' }; // Emerald
-            } else if (servedItems === totalItems && totalItems > 0) {
-                statusKey = 'ready';
-                statusInfo = { badgeText: 'Siap Bayar', color: '#8b5cf6', progress: { served: servedItems, total: totalItems } }; // Violet
-            } else if (servedItems > 0 && servedItems < totalItems) {
-                statusKey = 'in_progress';
-                statusInfo = { badgeText: 'Diproses', color: '#3b82f6', progress: { served: servedItems, total: totalItems } }; // Blue
-            } else {
-                statusKey = 'pending';
-                statusInfo = { badgeText: 'Menunggu', color: '#f59e0b', progress: { served: servedItems, total: totalItems } }; // Amber
             }
         }
 
@@ -271,7 +386,7 @@ const TableManagement = () => {
                 onClick={() => handleTableClick(table)}
             >
                 <div className="p-4">
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-start mb-2">
                         <h3 className="text-xl font-bold text-gray-800">
                             {table.transaksi_id ? `Meja ${table.nomor_meja}` : `Meja ${table.nomor_meja}`}
                         </h3>
@@ -283,13 +398,28 @@ const TableManagement = () => {
                         </span>
                     </div>
 
+                    {/* Status Pembayaran (jika ada transaksi) */}
+                    {table.transaksi_id && (
+                        <div className="mb-2">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                table.status_pembayaran === 'Lunas'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-red-100 text-red-700'
+                            }`}>
+                                {table.status_pembayaran === 'Lunas' ? 'Lunas' : 'Belum Lunas'}
+                            </span>
+                        </div>
+                    )}
+
                     {statusKey === 'empty' ? (
                         <p className="mt-10 text-center text-lg text-gray-400">Kosong</p>
                     ) : (
-                        <div className="mt-4">
-                            <p className="text-sm text-gray-500">
-                                Order #{table.transaksi_id}
-                            </p>
+                        <div className="mt-2">
+                            {orderDetail && (orderDetail.nama_pembeli || orderDetail.customer) && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Order #{table.transaksi_id} - <span className="font-semibold">{orderDetail.nama_pembeli || orderDetail.customer}</span>
+                                </p>
+                            )}
                             <p className="text-xs text-gray-400 mt-1">
                                 {table.tanggal_transaksi 
                                     ? new Date(table.tanggal_transaksi).toLocaleString('id-ID', {
@@ -359,6 +489,29 @@ const TableManagement = () => {
         <>
             <Helmet>
                 <title>Manajemen Meja | MiWau</title>
+                <style>{`
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                    @keyframes slideUp {
+                        from { transform: translateY(20px); opacity: 0; }
+                        to { transform: translateY(0); opacity: 1; }
+                    }
+                    @keyframes slideInRight {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                    .animate-fadeIn {
+                        animation: fadeIn 0.2s ease-out;
+                    }
+                    .animate-slideUp {
+                        animation: slideUp 0.3s ease-out;
+                    }
+                    .animate-slideInRight {
+                        animation: slideInRight 0.4s ease-out;
+                    }
+                `}</style>
             </Helmet>
             <div className="min-h-screen bg-gray-50">
                 <Header />
@@ -403,19 +556,22 @@ const TableManagement = () => {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-4 h-4 bg-amber-50 border-2 border-amber-500 rounded-full" />
-                                    <span className="text-sm">Belum Bayar <span className="font-bold">{seatCounts.notPaid}</span></span>
+                                    <span className="text-sm">Belum Lunas <span className="font-bold">{seatCounts.belumLunas}</span></span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-4 h-4 bg-green-50 border-2 border-green-500 rounded-full" />
-                                    <span className="text-sm">Lunas <span className="font-bold">{seatCounts.paid}</span></span>
+                                    <span className="text-sm">Lunas <span className="font-bold">{seatCounts.lunas}</span></span>
                                 </div>
                             </div>
-                            <button 
-                                onClick={() => setShowEditMejaPopup(true)}
-                                className="px-4 py-2 bg-[#D4A15D] text-white font-semibold rounded-lg text-sm whitespace-nowrap hover:bg-[#C4915D] transition-colors"
-                            >
-                                Edit Meja
-                            </button>
+                            {/* Tombol Edit Meja - Hanya untuk Manajer */}
+                            {currentUser && currentUser.role === 'Manajer' && (
+                                <button 
+                                    onClick={() => setShowEditMejaPopup(true)}
+                                    className="px-4 py-2 bg-[#D4A15D] text-white font-semibold rounded-lg text-sm whitespace-nowrap hover:bg-[#C4915D] transition-colors"
+                                >
+                                    Edit Meja
+                                </button>
+                            )}
                         </div>
                     </div>
                     
@@ -427,7 +583,7 @@ const TableManagement = () => {
                         
                         {activeView === 'Meja' ? (
                             /* Tab Meja: Tampilkan semua order aktif dengan SEMUA items */
-                            <div className="space-y-4">
+                            <div className="space-y-4" key={`meja-tab-${refreshKey}`}>
                                 {activeOrdersWithItems.length === 0 ? (
                                     <p className="text-center text-gray-400 pt-10">Tidak ada pesanan aktif</p>
                                 ) : (
@@ -442,34 +598,63 @@ const TableManagement = () => {
                                                 className="bg-gray-700 rounded-lg p-4"
                                             >
                                                 {/* Header Order */}
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <div>
-                                                        <p className="font-bold text-lg">{String(order.nomor_meja).padStart(2, '0')}</p>
-                                                        <p className="text-xs text-gray-400">
-                                                            {order.tanggal_transaksi 
-                                                                ? new Date(order.tanggal_transaksi).toLocaleTimeString('id-ID', {
-                                                                    hour: '2-digit',
-                                                                    minute: '2-digit'
-                                                                })
-                                                                : '-'}
-                                                        </p>
-                                                        <p className="text-xs text-gray-400">Dine in</p>
+                                                <div className="mb-3">
+                                                    {/* Baris 1: Nama Meja/TA dan Order ID */}
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <p className="font-bold text-lg">
+                                                                {isTakeAway(order)
+                                                                    ? `TA-${String(order.transaksi_id).padStart(3, '0')}`
+                                                                    : `Meja ${String(order.nomor_meja).padStart(2, '0')}`}
+                                                            </p>
+                                                            <p className="text-xs text-gray-400">
+                                                                Order ID: #{order.transaksi_id}
+                                                            </p>
+                                                            { (order.nama_pembeli || order.customer) && (
+                                                                <p className="text-xs text-gray-300">
+                                                                    Nama: <span className="font-semibold">{order.nama_pembeli || order.customer}</span>
+                                                                </p>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${
-                                                        order.status_pembayaran === 'Paid' 
-                                                            ? 'bg-green-500 text-white' 
-                                                            : order.status_pesanan === 'Siap'
-                                                            ? 'bg-green-500 text-white'
-                                                            : order.status_pesanan === 'Diproses'
-                                                            ? 'bg-amber-500 text-white'
-                                                            : 'bg-amber-500 text-white'
-                                                    }`}>
-                                                        {order.status_pembayaran === 'Paid' 
-                                                            ? 'Paid' 
-                                                            : order.status_pesanan === 'Siap'
-                                                            ? 'Delivered'
-                                                            : 'Pending'}
-                                                    </span>
+                                                    
+                                                    {/* Baris 2: Waktu, Tipe, dan Status Badges */}
+                                                    <div className="flex justify-between items-center">
+                                                        <div>
+                                                            <p className="text-xs text-gray-400">
+                                                                {order.tanggal_transaksi 
+                                                                    ? new Date(order.tanggal_transaksi).toLocaleTimeString('id-ID', {
+                                                                        hour: '2-digit',
+                                                                        minute: '2-digit'
+                                                                    })
+                                                                    : '-'}
+                                                                {' • '}
+                                                                {isTakeAway(order) ? 'Take Away' : 'Dine in'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            {/* Status Pesanan */}
+                                                            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                                                order.status_pesanan === 'Selesai'
+                                                                    ? 'bg-green-500 text-white'
+                                                                    : order.status_pesanan === 'Siap'
+                                                                    ? 'bg-blue-500 text-white'
+                                                                    : order.status_pesanan === 'Diproses'
+                                                                    ? 'bg-yellow-500 text-white'
+                                                                    : 'bg-gray-500 text-white'
+                                                            }`}>
+                                                                {order.status_pesanan || 'Pending'}
+                                                            </span>
+                                                            {/* Status Pembayaran */}
+                                                            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                                                                order.status_pembayaran === 'Lunas'
+                                                                    ? 'bg-emerald-600 text-white'
+                                                                    : 'bg-red-600 text-white'
+                                                            }`}>
+                                                                {order.status_pembayaran === 'Lunas' ? 'Lunas' : 'Belum Lunas'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 
                                                 {/* List Items - TAMPILKAN SEMUA MENU */}
@@ -528,7 +713,7 @@ const TableManagement = () => {
                             </div>
                         ) : (
                             /* Tab Detail Pesanan: Tampilkan semua order aktif (bisa unceklis kalau miss-click) */
-                            <div>
+                            <div key={`detail-tab-${refreshKey}`}>
                                 {activeOrdersWithItems.length === 0 ? (
                                     <p className="text-center text-gray-400 pt-10">
                                         Tidak ada pesanan aktif
@@ -536,36 +721,44 @@ const TableManagement = () => {
                                 ) : (
                                     <div className="space-y-4">
                                         {activeOrdersWithItems.map(order => (
-                                            <div key={order.transaksi_id}>
-                                                    {/* Header Order */}
-                                                    <div className="bg-gray-700 rounded-lg p-4 mb-2">
-                                                        <div className="flex justify-between items-start">
-                                                            <div>
-                                                                <p className="font-bold text-xl">{String(order.nomor_meja).padStart(2, '0')}</p>
-                                                                <p className="text-sm text-gray-400">
-                                                                    {order.tanggal_transaksi 
-                                                                        ? new Date(order.tanggal_transaksi).toLocaleTimeString('id-ID', {
-                                                                            hour: '2-digit',
-                                                                            minute: '2-digit'
-                                                                        })
-                                                                        : '-'}
-                                                                </p>
-                                                                <p className="text-sm text-gray-400">Dine in</p>
-                                                            </div>
-                                                            <span className={`text-xs font-bold px-3 py-1 rounded-full ${
-                                                                order.items && order.items.every(item => item.status_item === 'Disajikan')
-                                                                    ? 'bg-green-500 text-white' 
-                                                                    : 'bg-amber-500 text-white'
-                                                            }`}>
-                                                                {order.items && order.items.every(item => item.status_item === 'Disajikan')
-                                                                    ? 'Delivered'
-                                                                    : 'Pending'}
-                                                            </span>
+                                            <div key={`order-${order.transaksi_id}-${refreshKey}`}>
+                                                {/* Header Order */}
+                                                <div className="bg-gray-700 rounded-lg p-4 mb-2">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="font-bold text-xl">
+                                                                {isTakeAway(order)
+                                                                    ? `TA-${String(order.transaksi_id).padStart(3, '0')}`
+                                                                    : `Meja ${String(order.nomor_meja).padStart(2, '0')}`}
+                                                            </p>
+                                                            <p className="text-sm text-gray-400">
+                                                                {order.tanggal_transaksi 
+                                                                    ? new Date(order.tanggal_transaksi).toLocaleTimeString('id-ID', {
+                                                                        hour: '2-digit',
+                                                                        minute: '2-digit'
+                                                                    })
+                                                                    : '-'}
+                                                            </p>
+                                                            <p className="text-sm text-gray-400">
+                                                                {isTakeAway(order) ? 'Take Away' : 'Dine in'}
+                                                            </p>
                                                         </div>
+                                                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                                                            order.status_pesanan === 'Selesai'
+                                                                ? 'bg-green-500 text-white'
+                                                                : order.status_pesanan === 'Siap'
+                                                                ? 'bg-blue-500 text-white'
+                                                                : order.status_pesanan === 'Diproses'
+                                                                ? 'bg-yellow-500 text-white'
+                                                                : 'bg-gray-500 text-white'
+                                                        }`}>
+                                                            {order.status_pesanan || 'Pending'}
+                                                        </span>
                                                     </div>
-                                                    
-                                                    {/* List Items dengan Checkbox INTERAKTIF */}
-                                                    <div className="space-y-2 mb-4">
+                                                </div>
+
+                                                {/* List Items dengan Checkbox INTERAKTIF */}
+                                                <div className="space-y-2 mb-4">
                                                         {order.items && order.items.length > 0 ? (
                                                             order.items.map(item => (
                                                                 <div 
@@ -622,148 +815,37 @@ const TableManagement = () => {
                     </aside>
                 </main>
 
-                {/* Popup Modal Detail Order (ketika meja diklik) */}
-                {showPopup && selectedOrder && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-                            {/* Header Popup */}
-                            <div className="bg-gray-100 p-4 flex justify-between items-center border-b sticky top-0">
-                                <div>
-                                    <h3 className="text-2xl font-bold">Meja {String(selectedOrder.nomor_meja).padStart(2, '0')}</h3>
-                                    <p className="text-sm text-gray-600">
-                                        {selectedOrder.tanggal_transaksi 
-                                            ? new Date(selectedOrder.tanggal_transaksi).toLocaleTimeString('id-ID', {
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })
-                                            : '-'}
-                                    </p>
-                                    <p className="text-sm text-gray-600">Dine in</p>
-                                </div>
-                                <button
-                                    onClick={handleClosePopup}
-                                    className="text-3xl text-gray-600 hover:text-gray-800 font-bold leading-none"
-                                >
-                                    ✕
-                                </button>
-                            </div>
+                {/* Komponen Modal/PopUp */}
+                <PopUpOrderDetail
+                    show={showPopup}
+                    order={selectedOrder}
+                    items={orderItems}
+                    onClose={handleClosePopup}
+                    onKosongkan={handleKosongkanMeja}
+                    isTakeAway={isTakeAway(selectedOrder)}
+                />
 
-                            {/* Status Badge */}
-                            <div className="p-4 border-b">
-                                <span className={`inline-block text-xs font-bold px-3 py-1 rounded-full ${
-                                    selectedOrder.status_pembayaran === 'Paid' 
-                                        ? 'bg-green-500 text-white' 
-                                        : selectedOrder.status_pesanan === 'Siap'
-                                        ? 'bg-green-500 text-white'
-                                        : 'bg-amber-500 text-white'
-                                }`}>
-                                    {selectedOrder.status_pembayaran === 'Paid' 
-                                        ? 'Paid' 
-                                        : selectedOrder.status_pesanan === 'Siap'
-                                        ? 'Not paid'
-                                        : 'Not paid'}
-                                </span>
-                            </div>
+                <EditMeja
+                    show={showEditMejaPopup}
+                    onClose={() => setShowEditMejaPopup(false)}
+                    allTables={allTables}
+                    onToggleStatus={handleToggleStatusMeja}
+                    onAddTable={handleTambahMeja}
+                />
 
-                            {/* List Items */}
-                            <div className="p-4">
-                                {orderItems.length === 0 ? (
-                                    <p className="text-center text-gray-500 py-4">Loading items...</p>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {orderItems.map(item => (
-                                            <div key={item.detail_id} className="flex justify-between items-start">
-                                                <div className="flex-1">
-                                                    <p className="font-medium text-gray-800">x {item.jumlah}</p>
-                                                    <p className="text-gray-600">{item.nama_menu}</p>
-                                                </div>
-                                                <p className="font-semibold text-gray-800">
-                                                    Rp {(item.harga_satuan || 0).toLocaleString('id-ID')}
-                                                </p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                <PopUpConfirm
+                    show={confirmModal.show}
+                    message={confirmModal.message}
+                    onConfirm={confirmModal.onConfirm}
+                    onCancel={hideConfirm}
+                />
 
-                            {/* Total & Payment Info */}
-                            <div className="p-4 border-t border-b bg-gray-50">
-                                <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                                    <span className="font-semibold">Total</span>
-                                    <span className="font-bold text-lg">Rp {(selectedOrder.total_harga || 0).toLocaleString('id-ID')}</span>
-                                </div>
-                                <p className="text-xs text-gray-500">
-                                    {selectedOrder.tanggal_transaksi 
-                                        ? new Date(selectedOrder.tanggal_transaksi).toLocaleString('id-ID', {
-                                            day: 'numeric',
-                                            month: 'short',
-                                            year: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })
-                                        : '-'}
-                                </p>
-                                <p className="text-xs text-gray-500">by Kasir</p>
-                            </div>
-
-                            {/* Tombol Kosongkan Meja */}
-                            <div className="p-4">
-                                <button
-                                    onClick={handleKosongkanMeja}
-                                    className="w-full py-3 bg-[#D4A15D] hover:bg-[#C4915D] text-white font-semibold rounded-lg transition-colors"
-                                >
-                                    Kosongkan Meja
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Popup Edit Meja */}
-                {showEditMejaPopup && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-                        <div className="bg-white rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
-                            {/* Header */}
-                            <div className="sticky top-0 bg-[#D4A15D] text-white p-4 flex justify-between items-center rounded-t-lg">
-                                <h2 className="text-lg font-bold">Edit Meja</h2>
-                                <button
-                                    onClick={() => setShowEditMejaPopup(false)}
-                                    className="text-white hover:text-gray-200 text-2xl leading-none"
-                                >
-                                    ×
-                                </button>
-                            </div>
-
-                            {/* Konten */}
-                            <div className="p-6">
-                                <div className="space-y-3">
-                                    {tables.map((table) => (
-                                        <div
-                                            key={table.meja_id}
-                                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
-                                        >
-                                            <span className="font-medium">Meja {table.nomor_meja}</span>
-                                            <button
-                                                onClick={() => handleHapusMeja(table.meja_id)}
-                                                className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors"
-                                            >
-                                                Hapus
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Tombol Tambah Meja */}
-                                <button
-                                    onClick={handleTambahMeja}
-                                    className="w-full mt-4 py-2 bg-[#D4A15D] hover:bg-[#C4915D] text-white font-semibold rounded-lg transition-colors"
-                                >
-                                    + Tambah Meja
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <PopUpNotification
+                    show={notifModal.show}
+                    message={notifModal.message}
+                    type={notifModal.type}
+                    onClose={() => setNotifModal({ ...notifModal, show: false })}
+                />
             </div>
         </>
     );

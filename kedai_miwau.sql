@@ -738,11 +738,16 @@ ALTER TABLE `tpenjualan`
   ADD CONSTRAINT `tpenjualan_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`);
 
 --
--- Constraints for table `ulasan`
---
 ALTER TABLE `ulasan`
   ADD CONSTRAINT `ulasan_ibfk_1` FOREIGN KEY (`transaksi_id`) REFERENCES `tpenjualan` (`transaksi_id`);
 COMMIT;
+--
+-- Migration additions: add customer name and payment amount to tpenjualan
+-- (safe to run on existing DB; will add nullable columns)
+--
+ALTER TABLE `tpenjualan`
+  ADD COLUMN `nama_pembeli` varchar(255) DEFAULT NULL,
+  ADD COLUMN `jumlah_bayar` decimal(12,2) DEFAULT NULL;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;

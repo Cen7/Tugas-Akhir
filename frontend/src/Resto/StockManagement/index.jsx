@@ -41,6 +41,10 @@ const StockManagement = () => {
       const warningsData = await warningsRes.json();
       setStockData(stokData);
 
+      console.log("Warnings data received:", warningsData);
+      console.log("Stok menipis:", warningsData.stokMenipis);
+      console.log("Stok kedaluwarsa:", warningsData.stokKadaluwarsa);
+
       if (warningsData.stokMenipis.length > 0 || warningsData.stokKadaluwarsa.length > 0) {
         setWarnings(warningsData);
         setShowWarning(true);
@@ -117,6 +121,42 @@ const StockManagement = () => {
     );
     if (filteredItems.length === 0) return null;
 
+    // Helper function untuk cek apakah item punya warning
+    const hasLowStock = (itemId) => {
+      const result = warnings?.stokMenipis?.some(w => w.bahan_id === itemId) || false;
+      if (result) {
+        console.log(`Low stock detected for item ID ${itemId}`);
+      }
+      return result;
+    };
+
+    const hasExpiringSoon = (itemId) => {
+      const result = warnings?.stokKadaluwarsa?.some(w => w.bahan_id === itemId) || false;
+      if (result) {
+        console.log(`Expiring soon detected for item ID ${itemId}`);
+      }
+      return result;
+    };
+
+    // Helper function untuk cek apakah batch terdekat sudah kedaluwarsa
+    // firstInDate = tanggal_kadaluarsa terdekat (MIN dari tanggal_kadaluarsa)
+    const isExpired = (firstInDate) => {
+      if (!firstInDate) return false;
+      const nearestExpiry = new Date(firstInDate);
+      const today = new Date();
+      // Set ke midnight untuk perbandingan tanggal saja
+      today.setHours(0, 0, 0, 0);
+      nearestExpiry.setHours(0, 0, 0, 0);
+      
+      const expired = nearestExpiry < today;
+      
+      if (expired) {
+        console.log(`Stok KEDALUWARSA detected - Kedaluwarsa terdekat: ${nearestExpiry.toISOString()}, Today: ${today.toISOString()}`);
+      }
+      
+      return expired;
+    };
+
     return (
       <div key={category} className="mb-8 last:mb-0">
         <h2 className="text-xl font-bold text-gray-800 mb-4">{category}</h2>
@@ -124,41 +164,84 @@ const StockManagement = () => {
           <table className="min-w-full">
             <thead className="bg-gray-50">
               <tr>
-                {['Nama Bahan', 'Stok', 'Stok Terbaru', 'Stok Terlama', 'Peringatan Stok', 'Peringatan Kadaluarsa', 'Action'].map(header => (
+                {['Nama Bahan', 'Stok', 'Kedaluwarsa Terjauh', 'Kedaluwarsa Terdekat', 'Peringatan Stok', 'Peringatan Kedaluwarsa', 'Action'].map(header => (
                   <th key={header} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{header}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredItems.map(item => (
-                <tr
-                  key={item.id}
-                  className={item.status === 'tidak tersedia' ? 'bg-gray-50 opacity-60' : ''}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10">
-                        <img
-                          className="h-10 w-10 rounded-full object-cover bg-gray-200"
-                          src={item.has_gambar ? `http://localhost:3000/api/bahan-baku/gambar/${item.id}?t=${new Date().getTime()}` : '/images/placeholder_ayam.png'}
-                          alt={item.name}
-                        />
-                      </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {item.name.includes(`(${item.unit})`) ? item.name : `${item.name} (${item.unit})`}
-                          {item.status === 'tidak tersedia' && (
-                            <span className="ml-2 text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                              Nonaktif
-                            </span>
-                          )}
+              {filteredItems.map(item => {
+                const lowStock = hasLowStock(item.id);
+                const expiringSoon = hasExpiringSoon(item.id);
+                const expired = isExpired(item.firstIn);
+                const hasWarning = lowStock || expiringSoon || expired;
+                
+                // Tentukan warna background berdasarkan kondisi - LEBIH MENCOLOK
+                let bgClass = 'bg-white';
+                if (item.status === 'tidak tersedia') {
+                  bgClass = 'bg-gray-100 opacity-60';
+                } else if (expired) {
+                  // KADALUARSA (prioritas tertinggi) - MERAH GELAP
+                  bgClass = 'bg-red-200 border-l-8 border-red-800';
+                } else if (lowStock && expiringSoon) {
+                  bgClass = 'bg-red-100 border-l-8 border-red-600'; // Kedua warning - MERAH TERANG
+                } else if (lowStock) {
+                  bgClass = 'bg-yellow-100 border-l-8 border-yellow-600'; // Stok menipis - KUNING TERANG
+                } else if (expiringSoon) {
+                  bgClass = 'bg-orange-100 border-l-8 border-orange-600'; // Hampir kadaluarsa - ORANGE TERANG
+                }
+
+                return (
+                  <tr
+                    key={item.id}
+                    className={`${bgClass} transition-colors`}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 h-10 w-10">
+                          <img
+                            className="h-10 w-10 rounded-full object-cover bg-gray-200"
+                            src={item.has_gambar ? `http://localhost:3000/api/bahan-baku/gambar/${item.id}?t=${new Date().getTime()}` : '/images/placeholder_ayam.png'}
+                            alt={item.name}
+                          />
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                            {item.name.includes(`(${item.unit})`) ? item.name : `${item.name} (${item.unit})`}
+                            {item.status === 'tidak tersedia' && (
+                              <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+                                Nonaktif
+                              </span>
+                            )}
+                            {/* Warning badges */}
+                            {expired && (
+                              <span className="text-xs font-semibold text-white bg-red-700 px-2 py-0.5 rounded-full">
+                                KEDALUWARSA
+                              </span>
+                            )}
+                            {!expired && lowStock && (
+                              <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">
+                                Stok Menipis
+                              </span>
+                            )}
+                            {!expired && expiringSoon && (
+                              <span className="text-xs font-semibold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full">
+                                Hampir Kedaluwarsa
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
+                    </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.stock}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.lastIn ? new Date(item.lastIn).toLocaleDateString('id-ID') : '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.firstIn ? new Date(item.firstIn).toLocaleDateString('id-ID') : '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {item.firstIn ? (
+                      <span className={expired ? 'text-red-700 font-bold' : 'text-gray-900'}>
+                        {new Date(item.firstIn).toLocaleDateString('id-ID')}
+                      </span>
+                    ) : '-'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.warningAt}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.peringatan_kadaluarsa_hari ? `${item.peringatan_kadaluarsa_hari} Hari` : 'N/A'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -171,7 +254,8 @@ const StockManagement = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
@@ -193,18 +277,47 @@ const StockManagement = () => {
                 <div className="w-full sm:w-1/3">
                   <SearchView placeholder="Search by ingredient name..." value={searchQuery} onChange={handleSearchChange} />
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => handleOpenModal('addBahan', true)} className="px-4 py-2 text-sm font-semibold bg-[#D4A15D] text-white rounded-lg shadow-sm hover:bg-opacity-90 transition">
-                    Tambah Jenis Bahan
-                  </button>
-                  <button onClick={() => handleOpenModal('editKategoriBahan', true)} className="px-4 py-2 text-sm font-semibold bg-gray-100 text-gray-700 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-200 transition">
-                    Edit Kategori
-                  </button>
-                  <button onClick={() => handleOpenModal('editStatusBahan', true)} className="px-4 py-2 text-sm font-semibold bg-gray-100 text-gray-700 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-200 transition">
-                    Edit Status Bahan
-                  </button>
-                </div>
+                
+                {/* Buttons - Hide untuk Dapur */}
+                {currentUser?.role === 'Manajer' && (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleOpenModal('addBahan', true)} className="px-4 py-2 text-sm font-semibold bg-[#D4A15D] text-white rounded-lg shadow-sm hover:bg-opacity-90 transition">
+                      Tambah Jenis Bahan
+                    </button>
+                    <button onClick={() => handleOpenModal('editKategoriBahan', true)} className="px-4 py-2 text-sm font-semibold bg-gray-100 text-gray-700 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-200 transition">
+                      Edit Kategori
+                    </button>
+                    <button onClick={() => handleOpenModal('editStatusBahan', true)} className="px-4 py-2 text-sm font-semibold bg-gray-100 text-gray-700 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-200 transition">
+                      Edit Status Bahan
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {/* Legend untuk warning colors */}
+              {warnings && (warnings.stokMenipis.length > 0 || warnings.stokKadaluwarsa.length > 0) && (
+                <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Keterangan Warna:</p>
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-red-200 border-l-8 border-red-800 rounded"></div>
+                      <span className="text-gray-600 font-medium">KEDALUWARSA (Batch terdekat sudah lewat tanggal)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-yellow-100 border-l-8 border-yellow-600 rounded"></div>
+                      <span className="text-gray-600 font-medium">Stok Menipis</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-orange-100 border-l-8 border-orange-600 rounded"></div>
+                      <span className="text-gray-600 font-medium">Hampir Kedaluwarsa</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-red-100 border-l-8 border-red-600 rounded"></div>
+                      <span className="text-gray-600 font-medium">Stok Menipis & Hampir Kedaluwarsa</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {loading && <p>Loading data stok...</p>}
               {error && <p className="text-red-500">Error: {error}</p>}
@@ -233,15 +346,20 @@ const StockManagement = () => {
             left: `${dropdownPosition.left}px`
           }}
         >
-          <button
-            onClick={() => {
-              const item = stockData.find(s => s.id === openDropdownId);
-              handleOpenModal('editBahan', item);
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
-          >
-            Edit Detail Bahan
-          </button>
+          {/* Edit Detail Bahan - Hanya Manajer */}
+          {currentUser?.role === 'Manajer' && (
+            <button
+              onClick={() => {
+                const item = stockData.find(s => s.id === openDropdownId);
+                handleOpenModal('editBahan', item);
+              }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
+            >
+              Edit Detail Bahan
+            </button>
+          )}
+          
+          {/* Detail Bahan - Semua role */}
           <button
             onClick={() => {
               const item = stockData.find(s => s.id === openDropdownId);
@@ -251,6 +369,8 @@ const StockManagement = () => {
           >
             Detail Bahan
           </button>
+          
+          {/* Rusak/Berkurang - Semua role */}
           <button
             onClick={() => {
               const item = stockData.find(s => s.id === openDropdownId);
@@ -260,15 +380,19 @@ const StockManagement = () => {
           >
             Rusak/Berkurang
           </button>
-          <button
-            onClick={() => {
-              const item = stockData.find(s => s.id === openDropdownId);
-              handleOpenModal('edit', item);
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
-          >
-            Edit Notifikasi
-          </button>
+          
+          {/* Edit Notifikasi - Hanya Manajer */}
+          {currentUser?.role === 'Manajer' && (
+            <button
+              onClick={() => {
+                const item = stockData.find(s => s.id === openDropdownId);
+                handleOpenModal('edit', item);
+              }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
+            >
+              Edit Notifikasi
+            </button>
+          )}
         </div>
       )}
 

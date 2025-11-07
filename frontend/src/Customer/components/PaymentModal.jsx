@@ -1,7 +1,10 @@
 import React from 'react';
 import { X } from 'react-feather';
+import { useNotification } from '../contexts/NotificationContext';
 
 const PaymentModal = ({ isOpen, onClose, orderId, totalAmount, onPaymentSuccess }) => {
+    const { showNotification } = useNotification();
+    
     if (!isOpen) return null;
 
     const handlePayment = async (method) => {
@@ -19,7 +22,7 @@ const PaymentModal = ({ isOpen, onClose, orderId, totalAmount, onPaymentSuccess 
             onPaymentSuccess();
 
         } catch(err) {
-            alert(err.message);
+            showNotification(err.message, "error");
             // Anda bisa tambahkan logic jika pembayaran gagal
         }
     };

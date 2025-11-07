@@ -28,10 +28,35 @@ const StockDamage = ({ item, onClose, onUpdate, currentUser }) => {
   if (!item) return null;
 
   const handleInputChange = (stok_id, field, value) => {
-    setDamageData(prev => ({
-      ...prev,
-      [stok_id]: { ...prev[stok_id], [field]: value }
-    }));
+    setDamageData(prev => {
+      const updated = { ...prev };
+      
+      if (field === 'rusak') {
+        // Cari batch yang sesuai untuk mendapatkan maksimal stok tersedia
+        const batch = batches.find(b => b.stok_id === stok_id);
+        const maxStock = batch ? batch.total : 0;
+        
+        // Parse value sebagai number
+        let numValue = parseInt(value) || 0;
+        
+        // Batasi maksimal sesuai stok tersedia
+        if (numValue > maxStock) {
+          numValue = maxStock;
+        }
+        
+        // Pastikan tidak negatif
+        if (numValue < 0) {
+          numValue = 0;
+        }
+        
+        updated[stok_id] = { ...updated[stok_id], [field]: numValue };
+      } else {
+        // Untuk field selain 'rusak' (seperti 'alasan')
+        updated[stok_id] = { ...updated[stok_id], [field]: value };
+      }
+      
+      return updated;
+    });
   };
 
   // --- FUNGSI handleSubmit YANG DIPERBAIKI ---
@@ -118,9 +143,27 @@ const StockDamage = ({ item, onClose, onUpdate, currentUser }) => {
                   <tr key={batch.stok_id}>
                     <td className="py-2 px-3 text-gray-700">{new Date(batch.tanggalMasuk).toLocaleDateString('id-ID')}</td>
                     <td className="py-2 px-3 text-gray-700">{new Date(batch.tanggal_kadaluarsa).toLocaleDateString('id-ID')}</td>
-                    <td className="py-2 px-3 text-gray-700">{batch.total}</td>
-                    <td className="py-2 px-3"><input type="number" placeholder="Isi Disini" onChange={(e) => handleInputChange(batch.stok_id, 'rusak', e.target.value)} className="w-24 p-2 border rounded-md"/></td>
-                    <td className="py-2 px-3"><input type="text" placeholder="Isi Disini" onChange={(e) => handleInputChange(batch.stok_id, 'alasan', e.target.value)} className="w-full p-2 border rounded-md"/></td>
+                    <td className="py-2 px-3 text-gray-700 font-semibold">{batch.total}</td>
+                    <td className="py-2 px-3">
+                      <input 
+                        type="number" 
+                        placeholder="0"
+                        min="0"
+                        max={batch.total}
+                        value={damageData[batch.stok_id]?.rusak || ''}
+                        onChange={(e) => handleInputChange(batch.stok_id, 'rusak', e.target.value)} 
+                        className="w-24 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[#D4A15D]"
+                      />
+                    </td>
+                    <td className="py-2 px-3">
+                      <input 
+                        type="text" 
+                        placeholder="Keterangan (opsional)"
+                        value={damageData[batch.stok_id]?.alasan || ''}
+                        onChange={(e) => handleInputChange(batch.stok_id, 'alasan', e.target.value)} 
+                        className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[#D4A15D]"
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

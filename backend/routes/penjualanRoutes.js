@@ -43,11 +43,11 @@ router.get('/', async (req, res) => {
 
     try {
         let transactionsQuery = `
-            SELECT 
-                tp.transaksi_id, mj.nomor_meja AS id, tp.tipe_pesanan AS type,
-                tp.status_pembayaran AS paymentStatus, tp.status_pesanan AS orderStatus,
-                tp.total_harga AS total, tp.metode_pembayaran AS paymentMethod,
-                u.nama_lengkap AS cashier, tp.tanggal_transaksi AS date
+        SELECT 
+            tp.transaksi_id, mj.nomor_meja AS id, tp.tipe_pesanan AS type,
+            tp.status_pembayaran AS paymentStatus, tp.status_pesanan AS orderStatus,
+            tp.total_harga AS total, tp.metode_pembayaran AS paymentMethod,
+            tp.nama_pembeli AS customer, u.nama_lengkap AS cashier, tp.tanggal_transaksi AS date
             FROM tpenjualan tp
             LEFT JOIN meja mj ON tp.meja_id = mj.meja_id
             LEFT JOIN user u ON tp.user_id = u.user_id
@@ -95,7 +95,7 @@ router.get('/', async (req, res) => {
 
 /**
  * @route   GET /api/penjualan/aktif-semua
- * @desc    Mengambil SEMUA pesanan aktif (belum Completed/Cancel), untuk sidebar "Meja"
+ * @desc    Mengambil SEMUA pesanan aktif (belum Selesai/Dibatalkan), untuk sidebar "Meja"
  * @access  Private
  */
 router.get('/aktif-semua', async (req, res) => {
@@ -103,10 +103,10 @@ router.get('/aktif-semua', async (req, res) => {
         const query = `
             SELECT 
                 tp.transaksi_id, tp.status_pesanan, tp.status_pembayaran, tp.total_harga,
-                mj.nomor_meja, tp.tipe_pesanan, tp.tanggal_transaksi
+                mj.nomor_meja, tp.tipe_pesanan, tp.tanggal_transaksi, tp.nama_pembeli
             FROM tpenjualan tp
             LEFT JOIN meja mj ON tp.meja_id = mj.meja_id
-            WHERE tp.status_pesanan NOT IN ('Completed', 'Cancel')
+            WHERE tp.status_pesanan NOT IN ('Selesai', 'Dibatalkan')
             ORDER BY tp.tanggal_transaksi ASC;
         `; 
         const [activeTransactions] = await pool.query(query);
@@ -134,7 +134,7 @@ router.get('/aktif-detail', async (req, res) => {
             SELECT DISTINCT tp.transaksi_id 
             FROM tpenjualan tp
             JOIN dtpenjualan dtp ON tp.transaksi_id = dtp.transaksi_id
-            WHERE tp.status_pesanan NOT IN ('Completed', 'Cancel')
+            WHERE tp.status_pesanan NOT IN ('Selesai', 'Dibatalkan')
               AND dtp.status_item = 'Menunggu'
             ORDER BY tp.tanggal_transaksi ASC;
         `;
@@ -147,7 +147,7 @@ router.get('/aktif-detail', async (req, res) => {
         const fullDataQuery = `
             SELECT 
                 tp.transaksi_id, tp.status_pesanan, tp.status_pembayaran, tp.total_harga,
-                mj.nomor_meja, tp.tipe_pesanan, tp.tanggal_transaksi
+                mj.nomor_meja, tp.tipe_pesanan, tp.tanggal_transaksi, tp.nama_pembeli
             FROM tpenjualan tp
             LEFT JOIN meja mj ON tp.meja_id = mj.meja_id
             WHERE tp.transaksi_id IN (?)
@@ -269,10 +269,10 @@ router.put('/item/:detail_id/status', async (req, res) => {
         // 6. Update status pesanan berdasarkan kondisi
         if (totalItems > 0 && totalItems.toString() === servedItems.toString()) {
             // Semua item sudah disajikan
-            if (status_pembayaran === 'Paid') {
-                // Sudah bayar + semua disajikan = Completed
+            if (status_pembayaran === 'Lunas') {
+                // Sudah bayar + semua disajikan = Selesai
                 await connection.query(
-                    "UPDATE tpenjualan SET status_pesanan = 'Completed' WHERE transaksi_id = ?", 
+                    "UPDATE tpenjualan SET status_pesanan = 'Selesai' WHERE transaksi_id = ?", 
                     [transaksi_id]
                 );
             } else {
@@ -313,31 +313,239 @@ router.put('/item/:detail_id/status', async (req, res) => {
  * @desc    Memproses pembayaran untuk sebuah pesanan
  * @access  Private
  */
+
 router.post('/:transaksi_id/bayar', async (req, res) => {
     const { transaksi_id } = req.params;
-    const { metode_pembayaran } = req.body;
+    const { metode_pembayaran, jumlah_bayar, user_id } = req.body;
 
     if (!metode_pembayaran) {
         return res.status(400).json({ message: "Metode pembayaran wajib diisi." });
     }
 
     try {
+        // Ambil total_harga dari database terlebih dahulu
+        const [orderData] = await pool.query(
+            'SELECT total_harga FROM tpenjualan WHERE transaksi_id = ?',
+            [transaksi_id]
+        );
+
+        if (orderData.length === 0) {
+            return res.status(404).json({ message: "Pesanan tidak ditemukan." });
+        }
+
+        const totalHarga = orderData[0].total_harga;
+
+        // Tentukan jumlah_bayar dan kembalian: 
+        // - Jika metode QRIS, set otomatis sesuai total_harga dan kembalian = 0
+        // - Jika Cash/Tunai dan jumlah_bayar diberikan, hitung kembalian
+        // - Jika tidak ada, set null
+        let finalJumlahBayar = null;
+        let kembalian = 0;
+        
+        if (metode_pembayaran === 'QRIS') {
+            finalJumlahBayar = totalHarga;
+            kembalian = 0; // QRIS selalu kembalian 0
+        } else if (jumlah_bayar) {
+            finalJumlahBayar = jumlah_bayar;
+            // Hitung kembalian: jumlah_bayar - total_harga
+            kembalian = Math.max(0, parseFloat(jumlah_bayar) - parseFloat(totalHarga));
+        }
+
+        // Update status pembayaran dan metode pembayaran saja
+        // JANGAN langsung set status_pesanan = 'Selesai'
+        // If frontend provided user_id (cashier), set it on the order. Otherwise keep existing user_id.
         const updateQuery = `
             UPDATE tpenjualan 
-            SET status_pembayaran = 'Paid', 
-                status_pesanan = 'Completed', 
-                metode_pembayaran = ? 
+            SET status_pembayaran = 'Lunas', 
+                metode_pembayaran = ?,
+                jumlah_bayar = ?,
+                kembalian = ?,
+                user_id = COALESCE(?, user_id)
             WHERE transaksi_id = ?`;
 
-        const [results] = await pool.query(updateQuery, [metode_pembayaran, transaksi_id]);
+        const [results] = await pool.query(updateQuery, [metode_pembayaran, finalJumlahBayar, kembalian, user_id || null, transaksi_id]);
 
         if (results.affectedRows === 0) {
             return res.status(404).json({ message: "Pesanan tidak ditemukan." });
         }
 
-        res.json({ message: `Pembayaran berhasil dengan metode ${metode_pembayaran}.` });
+        // Cek apakah semua item menu sudah diceklis (Disajikan) dan tipe pesanan
+        const checkItemsQuery = `
+            SELECT 
+                tp.tipe_pesanan,
+                COUNT(*) AS total_item,
+                SUM(CASE WHEN dtp.status_item = 'Disajikan' THEN 1 ELSE 0 END) AS item_disajikan
+            FROM dtpenjualan dtp
+            JOIN tpenjualan tp ON dtp.transaksi_id = tp.transaksi_id
+            WHERE dtp.transaksi_id = ?
+            GROUP BY tp.tipe_pesanan`;
+
+        const [checkResult] = await pool.query(checkItemsQuery, [transaksi_id]);
+        const { tipe_pesanan, total_item, item_disajikan } = checkResult[0];
+        
+        // Konversi ke number untuk memastikan perbandingan benar
+        const totalItems = Number(total_item);
+        const itemsDisajikan = Number(item_disajikan);
+
+        let newStatus = null;
+        let responseMessage = '';
+
+        // LOGIKA STATUS SETELAH BAYAR:
+        
+        // TAKEAWAY: Lunas + Semua Disajikan = Selesai (langsung Selesai)
+        if (itemsDisajikan === totalItems && tipe_pesanan === 'Takeaway') {
+            newStatus = 'Selesai';
+            responseMessage = `Pembayaran berhasil dengan metode ${metode_pembayaran}. Pesanan takeaway Selesai.`;
+        }
+        // DINE-IN: Lunas + Semua Disajikan = Siap (menunggu dikosongkan)
+        else if (itemsDisajikan === totalItems && tipe_pesanan === 'Dine-in') {
+            newStatus = 'Siap';
+            responseMessage = `Pembayaran berhasil dengan metode ${metode_pembayaran}. Menunggu meja dikosongkan.`;
+        }
+        // Sebagian item disajikan + Sudah bayar = Diproses
+        else if (itemsDisajikan > 0 && itemsDisajikan < totalItems) {
+            newStatus = 'Diproses';
+            responseMessage = `Pembayaran berhasil dengan metode ${metode_pembayaran}. Pesanan sedang diproses.`;
+        }
+        // Belum ada item disajikan + Sudah bayar = Tetap Pending (menunggu kitchen mulai kerja)
+        else if (itemsDisajikan === 0) {
+            newStatus = 'Pending';
+            responseMessage = `Pembayaran berhasil dengan metode ${metode_pembayaran}. Pesanan menunggu diproses kitchen.`;
+        }
+
+        if (newStatus) {
+            await pool.query(
+                `UPDATE tpenjualan SET status_pesanan = ? WHERE transaksi_id = ?`,
+                [newStatus, transaksi_id]
+            );
+        }
+
+        res.json({ 
+            message: responseMessage,
+            status_pesanan: newStatus,
+            items_disajikan: itemsDisajikan,
+            total_items: totalItems,
+            jumlah_bayar: finalJumlahBayar,
+            kembalian: kembalian
+        });
     } catch (err) {
         console.error("Gagal memproses pembayaran:", err);
+        res.status(500).json({ message: "Terjadi kesalahan pada server." });
+    }
+});
+
+/**
+ * @route   POST /api/penjualan/:transaksi_id/siap
+ * @desc    Tandai pesanan siap (set semua item Disajikan dan status pesanan Siap)
+ * @access  Private (untuk Dapur)
+ */
+router.post('/:transaksi_id/siap', async (req, res) => {
+    const { transaksi_id } = req.params;
+
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Set semua item menjadi Disajikan
+        await connection.query(
+            `UPDATE dtpenjualan 
+             SET status_item = 'Disajikan' 
+             WHERE transaksi_id = ?`,
+            [transaksi_id]
+        );
+
+        // 2. Cek status pembayaran
+        const [orderData] = await connection.query(
+            `SELECT status_pembayaran FROM tpenjualan WHERE transaksi_id = ?`,
+            [transaksi_id]
+        );
+
+        if (orderData.length === 0) {
+            await connection.rollback();
+            connection.release();
+            return res.status(404).json({ message: "Pesanan tidak ditemukan." });
+        }
+
+        const statusPembayaran = orderData[0].status_pembayaran;
+
+        // 3. Update status pesanan berdasarkan pembayaran
+        const newStatus = statusPembayaran === 'Lunas' ? 'Selesai' : 'Siap';
+        
+        await connection.query(
+            `UPDATE tpenjualan 
+             SET status_pesanan = ? 
+             WHERE transaksi_id = ?`,
+            [newStatus, transaksi_id]
+        );
+
+        await connection.commit();
+        
+        res.json({ 
+            message: `Pesanan berhasil ditandai siap. Status: ${newStatus}`,
+            status_pesanan: newStatus
+        });
+    } catch (err) {
+        await connection.rollback();
+        console.error("Gagal menandai pesanan siap:", err);
+        res.status(500).json({ message: "Terjadi kesalahan pada server." });
+    } finally {
+        connection.release();
+    }
+});
+
+/**
+ * @route   POST /api/penjualan/:transaksi_id/batal
+ * @desc    Membatalkan pesanan (set status_pesanan = 'Dibatalkan')
+ * @access  Private
+ */
+router.post('/:transaksi_id/batal', async (req, res) => {
+    const { transaksi_id } = req.params;
+
+    try {
+        // Cek apakah pesanan ada dan belum dibayar
+        const checkQuery = `
+            SELECT status_pembayaran, status_pesanan, tipe_pesanan, meja_id 
+            FROM tpenjualan 
+            WHERE transaksi_id = ?`;
+        const [checkResult] = await pool.query(checkQuery, [transaksi_id]);
+
+        if (checkResult.length === 0) {
+            return res.status(404).json({ message: "Pesanan tidak ditemukan." });
+        }
+
+        const { status_pembayaran, status_pesanan, tipe_pesanan, meja_id } = checkResult[0];
+
+        // Tidak boleh batalkan pesanan yang sudah dibayar atau sudah Dibatalkan
+        if (status_pembayaran === 'Lunas') {
+            return res.status(400).json({ message: "Tidak dapat membatalkan pesanan yang sudah dibayar." });
+        }
+
+        if (status_pesanan === 'Dibatalkan' || status_pesanan === 'Cancel') {
+            return res.status(400).json({ message: "Pesanan sudah dibatalkan sebelumnya." });
+        }
+
+        // Update status pesanan menjadi Dibatalkan (TIDAK mengubah status_pembayaran)
+        const updateQuery = `
+            UPDATE tpenjualan 
+            SET status_pesanan = 'Dibatalkan'
+            WHERE transaksi_id = ?`;
+        await pool.query(updateQuery, [transaksi_id]);
+
+        // Jika dine-in, kosongkan meja (set status meja jadi 'tersedia')
+        if (tipe_pesanan === 'Dine-in' && meja_id) {
+            await pool.query(
+                `UPDATE meja SET status = 'tersedia' WHERE meja_id = ?`,
+                [meja_id]
+            );
+        }
+
+        res.json({ 
+            message: "Pesanan berhasil dibatalkan.",
+            transaksi_id,
+            meja_dikosongkan: tipe_pesanan === 'Dine-in' && meja_id ? true : false
+        });
+    } catch (err) {
+        console.error("Gagal membatalkan pesanan:", err);
         res.status(500).json({ message: "Terjadi kesalahan pada server." });
     }
 });
@@ -350,7 +558,7 @@ router.get('/:id', async (req, res) => {
                 tp.transaksi_id, mj.nomor_meja AS id, tp.tipe_pesanan AS type,
                 tp.status_pembayaran AS paymentStatus, tp.status_pesanan AS orderStatus,
                 tp.total_harga AS total, tp.metode_pembayaran AS paymentMethod,
-                u.nama_lengkap AS cashier, tp.tanggal_transaksi AS date
+                tp.nama_pembeli AS customer, u.nama_lengkap AS cashier, tp.tanggal_transaksi AS date
             FROM tpenjualan tp
             LEFT JOIN meja mj ON tp.meja_id = mj.meja_id
             LEFT JOIN user u ON tp.user_id = u.user_id
@@ -393,10 +601,10 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/customer', async (req, res) => {
     // Ambil data dari body request yang dikirim frontend
-    const { tipe_pesanan, items, total_harga, meja_id } = req.body; // Ambil meja_id juga jika Dine-in
+    const { tipe_pesanan, items, total_harga, meja_id, nama_pembeli } = req.body; // Ambil meja_id juga jika Dine-in
 
     // --- Validasi Sederhana ---
-    if (!tipe_pesanan || !items || items.length === 0 || !total_harga) {
+    if (!tipe_pesanan || !items || items.length === 0 || !total_harga || !nama_pembeli) {
         return res.status(400).json({ message: "Data pesanan tidak lengkap." });
     }
     // Tambahkan validasi lain jika perlu (misal cek apakah menu_id valid, dll.)
@@ -405,15 +613,56 @@ router.post('/customer', async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        // Jika Dine-in, cek apakah meja tersedia
+        if (tipe_pesanan === 'Dine-in' && meja_id) {
+            const [mejaCheck] = await connection.query(
+                `SELECT status FROM meja WHERE meja_id = ?`,
+                [meja_id]
+            );
+
+            if (mejaCheck.length === 0) {
+                await connection.rollback();
+                connection.release();
+                return res.status(404).json({ message: "Meja tidak ditemukan." });
+            }
+
+            // Meja harus "tersedia" (bukan "terisi" atau "tidak tersedia")
+            if (mejaCheck[0].status !== 'tersedia') {
+                await connection.rollback();
+                connection.release();
+                
+                if (mejaCheck[0].status === 'terisi') {
+                    return res.status(400).json({ message: "Meja sudah terisi dengan pesanan aktif." });
+                } else {
+                    return res.status(400).json({ message: "Meja sedang tidak tersedia." });
+                }
+            }
+
+            // Cek apakah ada pesanan aktif di meja ini (double check)
+            const [activeOrderCheck] = await connection.query(
+                `SELECT transaksi_id FROM tpenjualan 
+                 WHERE meja_id = ? 
+                 AND status_pesanan NOT IN ('Selesai', 'Dibatalkan')`,
+                [meja_id]
+            );
+
+            if (activeOrderCheck.length > 0) {
+                await connection.rollback();
+                connection.release();
+                return res.status(400).json({ message: "Meja sudah terisi dengan pesanan aktif." });
+            }
+        }
+
         // 1. Masukkan data ke tpenjualan
         const penjualanQuery = `
             INSERT INTO tpenjualan 
-                (meja_id, user_id, total_harga, status_pembayaran, status_pesanan, tipe_pesanan, tanggal_transaksi) 
-            VALUES (?, ?, ?, ?, ?, ?, NOW())`;
+                (meja_id, user_id, total_harga, status_pembayaran, status_pesanan, tipe_pesanan, nama_pembeli, tanggal_transaksi) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`;
         
-        // Asumsi user_id '0' atau ID khusus untuk pesanan customer via QR
-        const userIdForCustomerOrder = null;
-        const statusPembayaranAwal = 'Not Paid'; // Status awal saat customer memesan
+        // Gunakan user_id khusus untuk pesanan customer via QR code
+        // ID 11 = customer_order, ID 999 = customer_qr, ID 1000 = customer_online
+        const userIdForCustomerOrder = 999; // customer_qr (untuk pesanan via QR code)
+        const statusPembayaranAwal = 'Belum Lunas'; // Status awal saat customer memesan
         const statusPesananAwal = 'Pending';   // Pesanan baru masuk
 
         const [penjualanResult] = await connection.query(penjualanQuery, [
@@ -422,7 +671,8 @@ router.post('/customer', async (req, res) => {
             total_harga, 
             statusPembayaranAwal, 
             statusPesananAwal, 
-            tipe_pesanan
+            tipe_pesanan,
+            nama_pembeli
         ]);
         const newTransaksiId = penjualanResult.insertId;
 
@@ -438,6 +688,14 @@ router.post('/customer', async (req, res) => {
                 (transaksi_id, menu_id, jumlah, harga_satuan, subtotal, status_item) 
             VALUES ?`;
         await connection.query(insertDetailQuery, [detailValues]);
+
+        // 3. Jika Dine-in, update status meja jadi "terisi"
+        if (tipe_pesanan === 'Dine-in' && meja_id) {
+            await connection.query(
+                `UPDATE meja SET status = 'terisi' WHERE meja_id = ?`,
+                [meja_id]
+            );
+        }
 
         await connection.commit();
         

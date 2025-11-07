@@ -30,6 +30,7 @@ const bahanBakuRoutes = require('./routes/bahanBakuRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const kategoriMenuRoutes = require('./routes/kategoriMenuRoutes'); 
 const kategoriBahanRoutes = require('./routes/kategoriBahanRoutes');
+// role editing endpoints removed; roles are fixed in the application
 const pembelianRoutes = require('./routes/pembelianRoutes');
 const penjualanRoutes = require('./routes/penjualanRoutes');
 const laporanRoutes = require('./routes/laporanRoutes');

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { useAuth } from '../../context/AuthContext'; // <-- TAMBAHKAN BARIS INI
@@ -9,7 +9,30 @@ const LoginForm = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth(); // Baris ini sekarang akan berfungsi karena useAuth sudah diimpor
+  const { login, currentUser } = useAuth(); // Tambahkan currentUser
+
+  // Redirect jika sudah login
+  useEffect(() => {
+    if (currentUser) {
+      // Redirect berdasarkan role
+      const redirectPath = getDefaultPathForRole(currentUser.role);
+      navigate(redirectPath);
+    }
+  }, [currentUser, navigate]);
+
+  // Fungsi untuk mendapatkan default path berdasarkan role
+  const getDefaultPathForRole = (role) => {
+    switch (role) {
+      case 'Manajer':
+        return '/table-management';
+      case 'Kasir':
+        return '/table-management';
+      case 'Dapur':
+        return '/kitchen-management';
+      default:
+        return '/table-management';
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,7 +50,9 @@ const LoginForm = () => {
       
       login(data.user);
       
-      navigate('/table-management'); // Arahkan ke halaman meja setelah login
+      // Redirect berdasarkan role
+      const redirectPath = getDefaultPathForRole(data.user.role);
+      navigate(redirectPath);
     } catch (err) {
       setError(err.message);
     } finally {

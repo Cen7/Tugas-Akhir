@@ -6,6 +6,7 @@ import Switch from '../../components/ui/Switch';
 import EditMenu from './EditMenu';
 import AddMenu from './AddMenu';
 import EditKategoriMenu from './EditKategoriMenu';
+import { useAuth } from '../../context/AuthContext';
 
 const MenuManagement = () => {
   const [activeFilter, setActiveFilter] = useState('All');
@@ -47,6 +48,9 @@ const MenuManagement = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const { currentUser } = useAuth();
+  const isManagerOrOwner = currentUser && (currentUser.role === 'Manajer' || currentUser.role === 'Pemilik');
 
 
 
@@ -102,7 +106,11 @@ const MenuManagement = () => {
       )}
     </div>
   );
-  const filterButtons = ['All', ...kategoriList.map(k => k.nama_kategori), 'Edit Menu'];
+  const filterButtons = [
+    'All',
+    ...kategoriList.map(k => k.nama_kategori),
+    ...(isManagerOrOwner ? ['Edit Menu'] : [])
+  ];
 
   return (
     <>
@@ -134,12 +142,16 @@ const MenuManagement = () => {
                 ))}
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => handleOpenModal('addMenu', null)} className="px-4 py-2 text-sm font-semibold bg-[#D4A15D] text-white rounded-lg shadow-sm hover:bg-opacity-90 transition">
-                  Tambah Menu
-                </button>
-                <button onClick={() => handleOpenModal('editKategoriMenu', null)} className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">
-                  Edit Kategori
-                </button>
+                {isManagerOrOwner && (
+                  <>
+                    <button onClick={() => handleOpenModal('addMenu', null)} className="px-4 py-2 text-sm font-semibold bg-[#D4A15D] text-white rounded-lg shadow-sm hover:bg-opacity-90 transition">
+                      Tambah Menu
+                    </button>
+                    <button onClick={() => handleOpenModal('editKategoriMenu', null)} className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">
+                      Edit Kategori
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             {loading && <p>Loading menu...</p>}

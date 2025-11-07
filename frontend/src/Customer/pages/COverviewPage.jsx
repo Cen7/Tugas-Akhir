@@ -2,16 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
+import { useNotification } from '../contexts/NotificationContext';
 import SuccessPopup from '../components/SuccessPopup';
 // Hapus import PaymentModal
 
 const COverviewPage = () => {
     const navigate = useNavigate();
     const { cartItems, totalAmount, orderType, clearCart , tableId} = useCart();
+    const { showNotification } = useNotification();
     const [isSuccessPopupOpen, setIsSuccessPopupOpen] = useState(false);
     const [orderId, setOrderId] = useState(null);
     const [searchParams] = useSearchParams();
     const [mejaId, setMejaId] = useState(null);
+    const [customerName, setCustomerName] = useState('');
 
     useEffect(() => {
         const idMejaDariUrl = searchParams.get('meja');
@@ -27,7 +30,7 @@ const COverviewPage = () => {
     const handlePlaceOrder = async () => {
         if (cartItems.length === 0) return;
         if (!orderType) {
-            alert("Tipe pesanan belum dipilih.");
+            showNotification("Tipe pesanan belum dipilih.", "warning");
             navigate('/order');
             return;
         }
@@ -43,6 +46,8 @@ const COverviewPage = () => {
                 total_harga: totalAmount,
                 meja_id: orderType === 'Dine-in' ? tableId : null
             };
+                // include customer name
+            orderData.nama_pembeli = customerName;
             console.log("Mengirim data pesanan:", orderData);
 
             const response = await fetch('/api/penjualan/customer', {
@@ -64,7 +69,7 @@ const COverviewPage = () => {
 
         } catch (error) {
             console.error("Error saat place order:", error);
-            alert(`Gagal membuat pesanan: ${error.message}`);
+            showNotification(`Gagal membuat pesanan: ${error.message}`, "error");
         }
     };
 
@@ -88,6 +93,17 @@ const COverviewPage = () => {
                 ))}
             </div>
 
+            <div className="mb-4">
+                <label className="text-sm font-semibold text-gray-700">Nama Pembeli</label>
+                <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Masukkan nama pembeli"
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md"
+                />
+            </div>
+
             <div className="mt-auto">
                 <div className="flex justify-between font-bold text-lg mb-4">
                     <span>Total</span>
@@ -103,7 +119,7 @@ const COverviewPage = () => {
                     <button
                         onClick={handlePlaceOrder}
                         className="flex-1 py-3 bg-[#D4A15D] text-white rounded-lg font-bold"
-                        disabled={cartItems.length === 0 || !orderType} // Disable juga jika orderType null
+                        disabled={cartItems.length === 0 || !orderType || customerName.trim() === ''} // Disable juga jika orderType null atau nama pembeli kosong
                     >
                         Pesan Sekarang ›
                     </button>

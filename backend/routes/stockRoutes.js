@@ -11,7 +11,7 @@ const pool = mysql.createPool({
 
 router.get('/', async (req, res) => {
     try {
-        // PERBAIKAN: Hapus semua spasi/indentasi di dalam backtick
+        // PERBAIKAN: Stok Terbaru & Terlama berdasarkan tanggal_kadaluarsa, bukan created_at
         const query = `SELECT 
             b.bahan_id as id, 
             b.nama_bahan as name, 
@@ -22,10 +22,10 @@ router.get('/', async (req, res) => {
             b.status,
             (b.gambar IS NOT NULL AND b.gambar != '') as has_gambar,
             COALESCE(SUM(s.jumlah_tersedia), 0) as stock,
-            MAX(s.created_at) as lastIn, 
-            MIN(s.created_at) as firstIn
+            MAX(s.tanggal_kadaluarsa) as lastIn, 
+            MIN(s.tanggal_kadaluarsa) as firstIn
             FROM bbaku b
-            LEFT JOIN stokb s ON b.bahan_id = s.bahan_id
+            LEFT JOIN stokb s ON b.bahan_id = s.bahan_id AND s.jumlah_tersedia > 0
             LEFT JOIN kategori_bahan kb ON b.kategori_bahan_id = kb.kategori_bahan_id
             GROUP BY 
             b.bahan_id, b.nama_bahan, b.satuan, b.stok_minimum, 
@@ -96,6 +96,7 @@ router.post('/damage', async (req, res) => {
         for (const item of items) {
             if (!item.stok_id || !item.bahan_id || !item.rusak) continue;
 
+            // Update stok (kurangi jumlah)
             const updateResult = await connection.query(
                 'UPDATE stokb SET jumlah_tersedia = jumlah_tersedia - ? WHERE stok_id = ? AND jumlah_tersedia >= ?',
                 [item.rusak, item.stok_id, item.rusak]
@@ -105,9 +106,16 @@ router.post('/damage', async (req, res) => {
                 throw new Error(`Stok untuk batch ID ${item.stok_id} tidak mencukupi.`);
             }
 
+            // Catat ke tabel rusak
             await connection.query(
                 'INSERT INTO brusak (bahan_id, stok_id, jumlah_rusak, tanggal, keterangan, user_id) VALUES (?, ?, ?, CURDATE(), ?, ?)',
                 [item.bahan_id, item.stok_id, item.rusak, item.alasan, user_id]
+            );
+
+            // PERBAIKAN: Hapus batch yang jumlahnya sudah 0
+            await connection.query(
+                'DELETE FROM stokb WHERE stok_id = ? AND jumlah_tersedia = 0',
+                [item.stok_id]
             );
         }
 
@@ -128,6 +136,7 @@ router.get('/warnings', async (req, res) => {
         // Menggunakan subquery untuk menghitung total stok terlebih dahulu
         const lowStockQuery = `
             SELECT 
+                b.bahan_id,
                 b.nama_bahan, 
                 b.satuan, 
                 b.stok_minimum,
@@ -143,6 +152,7 @@ router.get('/warnings', async (req, res) => {
         // Hanya menampilkan batch yang belum kadaluarsa tapi sudah masuk masa peringatan
         const expiringStockQuery = `
             SELECT 
+                b.bahan_id,
                 b.nama_bahan,
                 s.jumlah_tersedia,
                 b.satuan,
