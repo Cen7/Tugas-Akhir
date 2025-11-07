@@ -12,7 +12,10 @@ const MenuItemCard = ({ item, isReadOnly, existingQuantity }) => {
     
     const isAvailable = item.status === 'tersedia';
 
-    const price = typeof item.harga === 'string' ? parseFloat(item.harga) : item.harga;
+    // Check if there's an active promo
+    const hasPromo = item.promo_id && item.harga_promo;
+    const price = hasPromo ? parseFloat(item.harga_promo) : (typeof item.harga === 'string' ? parseFloat(item.harga) : item.harga);
+    const originalPrice = typeof item.harga === 'string' ? parseFloat(item.harga) : item.harga;
     const isValidPrice = !isNaN(price) && price >= 0;
 
     return (
@@ -41,9 +44,34 @@ const MenuItemCard = ({ item, isReadOnly, existingQuantity }) => {
             />
             <div className="p-3 flex flex-col flex-grow">
                 <p className="font-semibold text-sm">{item.nama_menu || 'Nama Menu'}</p>
-                <p className="text-xs text-gray-500 mb-2">
-                    Rp {isValidPrice ? price.toLocaleString('id-ID') : 'N/A'}
-                </p>
+                
+                {/* Display promo badge if active */}
+                {hasPromo && (
+                    <div className="flex items-center gap-1 mb-1">
+                        <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                            PROMO {item.persentase_diskon}%
+                        </span>
+                    </div>
+                )}
+                
+                {/* Display price with strikethrough if promo */}
+                <div className="mb-2">
+                    {hasPromo ? (
+                        <>
+                            <p className="text-xs text-gray-400 line-through">
+                                Rp {originalPrice.toLocaleString('id-ID')}
+                            </p>
+                            <p className="text-sm font-bold text-red-600">
+                                Rp {price.toLocaleString('id-ID')}
+                            </p>
+                        </>
+                    ) : (
+                        <p className="text-xs text-gray-500">
+                            Rp {isValidPrice ? price.toLocaleString('id-ID') : 'N/A'}
+                        </p>
+                    )}
+                </div>
+                
                 <div className="flex items-center justify-between mt-auto">
                      <span className="text-xs text-gray-400">{item.kategori || 'Kategori'}</span>
                      <div className="flex items-center gap-2 bg-gray-100 rounded-full px-1 py-1">

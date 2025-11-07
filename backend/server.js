@@ -35,6 +35,7 @@ const pembelianRoutes = require('./routes/pembelianRoutes');
 const penjualanRoutes = require('./routes/penjualanRoutes');
 const laporanRoutes = require('./routes/laporanRoutes');
 const mejaRoutes = require('./routes/mejaRoutes');
+const promoRoutes = require('./routes/promoRoutes');
 
 app.use('/api/meja', mejaRoutes);
 app.use('/api/laporan', laporanRoutes);
@@ -46,5 +47,6 @@ app.use('/api/pembelian', pembelianRoutes);
 app.use('/api/kategori-menu', kategoriMenuRoutes); 
 app.use('/api/kategori-bahan', kategoriBahanRoutes); 
 app.use('/api/penjualan', penjualanRoutes);
+app.use('/api/promo', promoRoutes);
 
 app.listen(port, () => console.log(`Server running at http://localhost:${port}`));

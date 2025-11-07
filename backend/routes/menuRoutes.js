@@ -28,9 +28,14 @@ router.get('/', async (req, res) => {
                 m.menu_id, m.nama_menu, m.harga, km.nama_kategori as kategori, 
                 m.deskripsi, m.status, m.kategori_menu_id,
                 (CASE WHEN m.status = "tersedia" THEN 1 ELSE 0 END) as available,
-                (m.gambar IS NOT NULL) as has_gambar
+                (m.gambar IS NOT NULL) as has_gambar,
+                p.promo_id, p.nama_promo, p.harga_promo, p.persentase_diskon,
+                p.tanggal_mulai, p.tanggal_selesai
             FROM menu m
             LEFT JOIN kategori_menu km ON m.kategori_menu_id = km.kategori_menu_id
+            LEFT JOIN promo p ON m.menu_id = p.menu_id 
+                AND p.status = 'aktif' 
+                AND NOW() BETWEEN p.tanggal_mulai AND p.tanggal_selesai
             ORDER BY km.nama_kategori, m.nama_menu`;
 
         const [results] = await pool.query(query);

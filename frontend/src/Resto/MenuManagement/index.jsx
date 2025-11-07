@@ -6,6 +6,7 @@ import Switch from '../../components/ui/Switch';
 import EditMenu from './EditMenu';
 import AddMenu from './AddMenu';
 import EditKategoriMenu from './EditKategoriMenu';
+import EditPromo from './EditPromo';
 import { useAuth } from '../../context/AuthContext';
 
 const MenuManagement = () => {
@@ -150,6 +151,9 @@ const MenuManagement = () => {
                     <button onClick={() => handleOpenModal('editKategoriMenu', null)} className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">
                       Edit Kategori
                     </button>
+                    <button onClick={() => handleOpenModal('editPromo', null)} className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">
+                      Edit Promo
+                    </button>
                   </>
                 )}
               </div>
@@ -207,6 +211,14 @@ const MenuManagement = () => {
           show={true} // <-- TAMBAHKAN BARIS INI
           onClose={handleCloseModal}
           onUpdate={fetchData} // Panggil fetchData agar list menu ter-refresh jika kategori berubah
+        />
+      )}
+      {activeModal.type === 'editPromo' && (
+        <EditPromo
+          show={true}
+          onClose={handleCloseModal}
+          onUpdate={fetchData}
+          menuList={Object.values(menuData).flat()}
         />
       )}
     </>

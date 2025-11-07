@@ -17,8 +17,17 @@ export const CartProvider = ({ children }) => {
                     i.menu_id === item.menu_id ? { ...i, quantity: i.quantity + 1 } : i 
                 );
             }
-            // Pastikan item yang ditambahkan memiliki menu_id
-            return [...prevItems, { ...item, quantity: 1 }]; 
+            // Determine price: use promo price if available, otherwise regular price
+            const finalPrice = item.promo_id && item.harga_promo ? parseFloat(item.harga_promo) : parseFloat(item.harga);
+            
+            // Pastikan item yang ditambahkan memiliki menu_id dan price yang benar
+            return [...prevItems, { 
+                ...item, 
+                quantity: 1,
+                price: finalPrice,
+                original_harga: parseFloat(item.harga),
+                is_promo: !!(item.promo_id && item.harga_promo)
+            }]; 
         });
     };
 
